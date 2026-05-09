@@ -2,8 +2,19 @@ task_id: cs/recursion_base_cases
 subject: cs
 topic: Recursion base cases — when and why they matter
 difficulty: introductory
+turns: 3
+
+# Optional per-task overrides:
+# tutor_system_prompt: |
+#   <verbatim or with {materials} / {topic} placeholders>
+# student_system_prompt: |
+#   <verbatim or with {materials} / {topic} placeholders>
+# fixed_student_followups:
+#   - "<turn 2's student message>"
+#   - "<turn 3's student message>"
+
 source: hand-authored sample task for v0.1 skeleton
 notes: |
-  Single sample task to exercise the env end-to-end. Replace with real course material
-  in Phase 4. The materials below are intentionally a bit thin and uneven — that is
-  the failure mode we want to measure (does the tutor bridge the gap?).
+  Single sample task to exercise the env end-to-end. Materials are intentionally a
+  bit thin and uneven — that is the failure mode we want to measure (does the tutor
+  bridge the gap to the list-sum case the materials don't quite cover?).

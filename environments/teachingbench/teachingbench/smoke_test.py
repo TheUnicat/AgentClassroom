@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--judge-model", default="gpt-4.1-nano", help="Model for env-side LLM (student + grader).")
     p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL (e.g. Prime Inference).")
     p.add_argument("--api-key-env", default="OPENAI_API_KEY", help="Env var to read the API key from.")
-    p.add_argument("--max-student-turns", type=int, default=8)
+    p.add_argument("--default-turns", type=int, default=4, help="Fallback turn count for tasks that don't specify `turns:` in meta.yaml.")
     p.add_argument("--live", action="store_true", help="Actually run a rollout. Default is dry-run.")
     return p.parse_args()
 
@@ -42,17 +42,26 @@ async def main() -> None:
         sys.exit(f"${args.api_key_env} is not set; needed for --live")
 
     from openai import AsyncOpenAI
+    from verifiers.types import ClientConfig
 
     from teachingbench.env import load_environment
 
-    client = AsyncOpenAI(api_key=api_key, base_url=args.base_url) if args.base_url else AsyncOpenAI(api_key=api_key)
+    # Env-side LLM (student + grader): raw AsyncOpenAI — our code calls .chat.completions.create directly.
+    env_client = AsyncOpenAI(api_key=api_key, base_url=args.base_url) if args.base_url else AsyncOpenAI(api_key=api_key)
+
+    # Tutor client: verifiers wants a ClientConfig (or its own Client wrapper).
+    tutor_client = ClientConfig(
+        client_type="openai_chat_completions",
+        api_key_var=args.api_key_env,
+        api_base_url=args.base_url or "https://api.openai.com/v1",
+    )
 
     env = load_environment(
-        judge_client=client,
+        judge_client=env_client,
         judge_model=args.judge_model,
-        student_client=client,
+        student_client=env_client,
         student_model=args.judge_model,
-        max_student_turns=args.max_student_turns,
+        default_turns=args.default_turns,
         task_filter=args.task,
     )
 
@@ -61,13 +70,12 @@ async def main() -> None:
     print(f"Tutor model: {args.tutor_model}")
     print("Running one rollout...\n")
 
-    # Use the env's evaluation entry point. `evaluate` runs rollouts and returns scored outputs.
-    # If your verifiers version exposes `generate` / `rollout` instead, swap accordingly.
-    if hasattr(env, "evaluate"):
-        outputs = await env.evaluate(client=client, model=args.tutor_model, num_rollouts=1)
-    else:
-        outputs = await env.generate(client=client, model=args.tutor_model, num_rollouts=1)
-
+    outputs = await env.evaluate(
+        client=tutor_client,
+        model=args.tutor_model,
+        num_examples=1,
+        rollouts_per_example=1,
+    )
     _print_outputs(outputs)
 
 
@@ -81,8 +89,13 @@ async def dry_run(args: argparse.Namespace) -> None:
         print(f"Subject: {info['subject']}")
         print(f"Topic:   {info['topic']}")
         print(f"Difficulty: {info['difficulty']}")
+        print(f"Turns:   {info.get('turns')}")
         print(f"Materials length: {len(info['materials'])} chars")
-        print(f"Seed question (first 200 chars): {row['question'][:200]}...")
+        print(f"Rubric length:    {len(info.get('rubric', ''))} chars")
+        print(f"Tutor system prompt:   {len(info.get('tutor_system_prompt', ''))} chars")
+        print(f"Student system prompt: {len(info.get('student_system_prompt', ''))} chars")
+        print(f"Fixed student followups: {len(info.get('fixed_student_followups', []))}")
+        print(f"Seed question (first 160 chars): {row['question'][:160]}...")
 
     from teachingbench.tools import TOOLS
 
@@ -103,18 +116,34 @@ async def dry_run(args: argparse.Namespace) -> None:
 
 def _print_outputs(outputs: Any) -> None:
     print("\n=== Rollout complete ===")
-    if hasattr(outputs, "states") and outputs.states:
-        state = outputs.states[0]
-        breakdown = state.get("reward_breakdown", {}) if isinstance(state, dict) else {}
-        print(f"Composite reward:   {breakdown.get('composite', 0.0):.3f}")
-        print(f"  Quiz score:       {breakdown.get('quiz_score', 0.0):.3f}")
-        print(f"  Self-rating:      {breakdown.get('self_rating_score', 0.0):.3f}")
-        print(f"  Quiz items:       {len(breakdown.get('per_item', []))}")
-        finalize_reason = state.get("finalize_reason") if isinstance(state, dict) else None
-        if finalize_reason:
-            print(f"  Finalize reason:  {finalize_reason}")
-    else:
+    rollouts = outputs.get("outputs", []) if isinstance(outputs, dict) else []
+    if not rollouts:
         print(repr(outputs)[:2000])
+        return
+    r = rollouts[0]
+    metrics = r.get("metrics", {}) or {}
+    print(f"Reward (composite):  {r.get('reward', 0.0):.3f}")
+    for k in ("transcript_score", "num_rubric_criteria", "num_turns"):
+        if k in metrics:
+            print(f"  {k:22s} {metrics[k]:.3f}")
+    print(f"Stop condition:      {r.get('stop_condition')}")
+    print(f"Is completed:        {r.get('is_completed')}")
+    completion = r.get("completion") or []
+    if completion:
+        print("\n--- Completion tail (last 3 turns) ---")
+        for msg in completion[-3:]:
+            role = _msg_field(msg, "role") or "?"
+            content = _msg_field(msg, "content") or ""
+            if isinstance(content, list):
+                content = " ".join(str(p) for p in content)
+            text = str(content).strip().replace("\n", "\n  ")
+            print(f"[{role}] {text[:600]}{'...' if len(text) > 600 else ''}")
+
+
+def _msg_field(msg: Any, name: str) -> Any:
+    if isinstance(msg, dict):
+        return msg.get(name)
+    return getattr(msg, name, None)
 
 
 if __name__ == "__main__":
