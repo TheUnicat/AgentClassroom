@@ -62,6 +62,7 @@ def load_environment(
         max_turns=max_turns,
         pass_threshold=pass_threshold,
         tools=TOOLS,
+        env_id="teachingbench",
         **kwargs,
     )
 

@@ -5,16 +5,105 @@ difficulty: introductory
 turns: 3
 
 # Optional per-task overrides:
-# tutor_system_prompt: |
-#   <verbatim or with {materials} / {topic} placeholders>
-# student_system_prompt: |
-#   <verbatim or with {materials} / {topic} placeholders>
-# fixed_student_followups:
-#   - "<turn 2's student message>"
-#   - "<turn 3's student message>"
+# - tutor_system_prompt REPLACES the default (which is empty)
+# - student_system_prompt is APPENDED to the general beginner-behavior rules
+# - fixed_student_followups pins specific student messages for turns 2..N+1
+
+student_system_prompt: |
+  You are a CS undergrad working through your professor's slides on recursion. Your `sum_list` function crashed with a stack overflow even though you had a base case, and you can't figure out why.
+
+seed_question: |
+  I'm reviewing my professor's slides on recursion and I keep getting confused about base cases. The slides give the factorial example and just say "you need a base case or it'll recurse forever," but when I tried to write a function that sums a list, my version crashed with a stack overflow even though I had a base case. Can you walk me through what a base case actually has to *do*, and why my list-sum might still have failed?
+
+  Here are the materials I have from class:
+
+  ---
+
+  # Lecture 7 — Recursion (excerpt)
+
+  ## Slide 12: What is recursion?
+
+  A recursive function calls itself on a smaller version of the same problem.
+
+  ## Slide 13: The classic example
+
+  ```python
+  def factorial(n):
+      if n == 0:
+          return 1
+      return n * factorial(n - 1)
+  ```
+
+  The `if n == 0` line is the **base case**. Without it, `factorial` would call itself forever.
+
+  ## Slide 14: Anatomy of a recursive function
+
+  Every recursive function has two parts:
+
+  1. **Base case** — the smallest version of the problem, which we know the answer to directly.
+  2. **Recursive case** — the problem solved in terms of a smaller version of itself.
+
+  > **Rule of thumb:** if the recursive call doesn't move toward the base case, you have a bug.
+
+  ## Slide 15: Practice problem
+
+  Write `sum_list(xs)` that returns the sum of a list of numbers, using recursion.
+
+  ---
+
+  # Textbook Ch. 4 — Recursion (excerpt)
+
+  A recursive procedure is one defined in terms of itself. To be well-defined, three conditions must hold:
+
+  1. There must exist at least one **base case** — an input for which the procedure produces an answer without recursing.
+  2. The recursive case must **strictly reduce** the input toward a base case.
+  3. The base case must be **reachable** from every legal input via the reduction in (2).
+
+  Most bugs in recursive code violate (2) or (3): the function has a base case, but the recursive call passes an input that doesn't move toward it. The function then runs out of stack space.
+
+  ## Worked example: `length(xs)`
+
+  ```python
+  def length(xs):
+      if xs == []:
+          return 0
+      return 1 + length(xs[1:])
+  ```
+
+  Base case: the empty list. The recursive case slices off the first element, so each call moves toward the base case. The recursion is well-founded.
+
+rubric:
+  - id: clarity
+    description: "Was the explanation clear, well-paced, and free of unnecessary jargon? Did it avoid firehosing?"
+    anchors:
+      - { score: 1.0, meaning: "Consistently clear, well-paced, free of jargon" }
+      - { score: 0.5, meaning: "Mostly clear with one or two confusing patches or unexplained jargon" }
+      - { score: 0.0, meaning: "Repeatedly unclear, jumbled, or jargon-heavy" }
+
+  - id: diagnosis
+    description: "Did the tutor identify *why* the student's list-sum was crashing — that the recursive call must move strictly toward the base case (textbook condition 2/3) — rather than just restating that base cases exist?"
+    anchors:
+      - { score: 1.0, meaning: "Explicitly diagnosed the 'recursive call doesn't reduce' bug class" }
+      - { score: 0.5, meaning: "Got close but mostly restated 'you need a base case'" }
+      - { score: 0.0, meaning: "Never diagnosed; just re-explained base cases generically" }
+
+  - id: bridging
+    description: "Did the tutor reference the student's own materials (factorial slide, textbook conditions, `length(xs)` worked example) and build on them, instead of presenting a generic explainer that ignored them?"
+    anchors:
+      - { score: 1.0, meaning: "Explicitly referenced and built on the student's materials" }
+      - { score: 0.5, meaning: "Referenced materials in passing but didn't build on them" }
+      - { score: 0.0, meaning: "Ignored the materials; gave a generic explainer" }
+
+  - id: transfer
+    description: "By the end, would the student be able to debug a *different* recursive function (not factorial, not sum_list) on their own? Are principles articulated, not just one example walked through?"
+    anchors:
+      - { score: 1.0, meaning: "Articulated transferable principles; student could apply to new cases" }
+      - { score: 0.5, meaning: "Some principles surfaced but mostly tied to the specific example" }
+      - { score: 0.0, meaning: "Walked through the one example; no transferable framing" }
 
 source: hand-authored sample task for v0.1 skeleton
 notes: |
-  Single sample task to exercise the env end-to-end. Materials are intentionally a
-  bit thin and uneven — that is the failure mode we want to measure (does the tutor
-  bridge the gap to the list-sum case the materials don't quite cover?).
+  Materials are intentionally a bit thin and uneven — that is the failure mode we want
+  to measure (does the tutor bridge the gap to the list-sum case the materials don't
+  quite cover?). Materials/ folder is also kept so the default student system prompt's
+  {materials} interpolation has something to load.

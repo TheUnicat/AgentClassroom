@@ -4,31 +4,45 @@ topic: Introduction to Python — first contact, no prior programming experience
 difficulty: absolute_beginner
 turns: 4
 
-# No materials/ folder for this task — the student has Python installed but no
-# slides / textbook to bridge to. The tutor has to teach from scratch over chat.
-
 # tutor_system_prompt intentionally omitted — realistic case is "user opens ChatGPT
 # and asks the question with no system prompt." The model uses its training defaults.
 
 student_system_prompt: |
-  You are simulating a real beginner who is trying to learn Python from a tutor in
-  a chat. You know nothing about programming. You have Python 3 installed and a
-  terminal / Python REPL open on your computer.
-
-  When the tutor tells you to type something, in this simulation you type it and
-  describe what you see on screen (e.g. if the tutor says try `print("hello, world!")`
-  you reply something like "ok i typed it and it said hello, world!"). When the tutor
-  asks you a question, answer it honestly as a real beginner would — including saying
-  you don't understand if you don't.
-
-  You may be aware this is an evaluation of the tutor. Your job is to behave like a
-  real beginner would — not to be charitable, not to be harsh, just realistic. Don't
-  pretend to understand things you wouldn't understand. Don't volunteer concepts the
-  tutor hasn't introduced.
-
-  Keep replies short — usually one or two sentences. Lowercase / casual is fine.
+  You are a complete beginner to coding. You have Python 3 installed and a terminal / Python REPL open on your computer.
 
 # fixed_student_followups: []   # turns 2..4 use the LLM student.
+
+seed_question: |
+  i dont know how to code, can you teach me python from scratch?
+
+rubric:
+  - id: diagnosis
+    description: "Did the tutor ask about the student's prior experience or context (other languages known, OS, REPL open, what they want to use Python for) BEFORE launching into instruction?"
+    anchors:
+      - { score: 1.0, meaning: "Explicitly diagnosed before teaching anything substantive" }
+      - { score: 0.5, meaning: "Some implicit probing or one quick check" }
+      - { score: 0.0, meaning: "Jumped straight into teaching with no diagnosis at all" }
+
+  - id: anti_firehose
+    description: "Did the tutor keep messages focused on one idea or one concrete step at a time, instead of dumping multi-paragraph walls on a beginner?"
+    anchors:
+      - { score: 1.0, meaning: "Consistently short, focused messages — most under ~80 words, one concept or step each" }
+      - { score: 0.5, meaning: "Mostly focused but at least one wall-of-text response" }
+      - { score: 0.0, meaning: "Consistently dumps multi-paragraph blocks or covers many concepts per message" }
+
+  - id: skill_appropriate
+    description: "Is the content appropriate for someone with zero programming experience? Print, basic arithmetic, variables, simple input — yes. Decorators, comprehensions, classes, async, type hints, virtualenvs — no, not first session."
+    anchors:
+      - { score: 1.0, meaning: "Stays firmly in absolute-beginner territory throughout" }
+      - { score: 0.5, meaning: "Mostly beginner with one or two slips into advanced material" }
+      - { score: 0.0, meaning: "Teaches advanced concepts inappropriate for first contact" }
+
+  - id: scaffolding
+    description: "Did the tutor lead the student through concrete interactive steps ('try this; what did you see?') rather than lecture? Effective first Python = try → react → introduce → try → react."
+    anchors:
+      - { score: 1.0, meaning: "Step-by-step interactive throughout; tutor adapts to what the student reports" }
+      - { score: 0.5, meaning: "Some interactive moments mixed with lecture" }
+      - { score: 0.0, meaning: "Pure lecture; no try-and-observe pattern" }
 
 source: hand-authored — first sample task per HUMAN_SCRATCHPAD.md notes
 notes: |

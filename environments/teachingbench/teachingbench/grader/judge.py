@@ -1,9 +1,16 @@
-"""TeachingRubric — subclass of `vf.JudgeRubric`. v0.1 reward = LLM judge scores the
-full chat transcript against the per-task rubric (no quiz, no self-rating).
+"""TeachingRubric — subclass of `vf.JudgeRubric`. Reward = LLM judge scores the full
+chat transcript against a fixed-schema rubric.
 
-Reads `info["rubric"]`, `info["materials"]`, `info["topic"]` for the judge prompt.
-Caches the parsed judge breakdown in `state["judge_breakdown"]` so sub-metric reward
-funcs can read it without re-calling the judge.
+The rubric is a list of {id, description, anchors} criteria (see `prompts.DEFAULT_RUBRIC`
+for the default and `dataset._validate_rubric` for the schema). Each task can ship its own.
+
+The judge call uses OpenAI structured outputs (`response_format={"type": "json_schema",
+"strict": true, ...}`) where the schema is built dynamically from the criterion ids:
+required fields, type number, additionalProperties false. The judge cannot return missing
+fields, extra fields, wrong types, or non-numbers. We then clamp to [0, 1] and average.
+
+Per-criterion scores + rationale land in `state["judge_breakdown"]` for inspection
+(pass `state_columns=["judge_breakdown"]` to `env.evaluate` to surface them in outputs).
 """
 
 from __future__ import annotations
@@ -50,14 +57,19 @@ async def _transcript_score(
     **_: Any,
 ) -> float:
     info_dict = _info_dict(info)
-    rubric_text = info_dict.get("rubric") or DEFAULT_RUBRIC
+    rubric = info_dict.get("rubric")
+    if not isinstance(rubric, list) or not rubric:
+        rubric = DEFAULT_RUBRIC
+
     materials = info_dict.get("materials", "")
     topic = info_dict.get("topic", "")
     transcript = _render_transcript(prompt, completion)
+    rubric_text = _format_rubric(rubric)
 
     judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
-        topic=topic, materials=materials, rubric=rubric_text, transcript=transcript
+        topic=topic, materials=materials, rubric_text=rubric_text, transcript=transcript
     )
+    schema = _build_response_schema(rubric)
 
     args = dict(judge_sampling_args or {})
     if "max_tokens" in args:
@@ -68,30 +80,31 @@ async def _transcript_score(
         resp = await judge_client.chat.completions.create(
             model=judge_model,
             messages=[{"role": "user", "content": judge_prompt}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "teaching_rubric_score", "strict": True, "schema": schema},
+            },
             **args,
         )
         raw = resp.choices[0].message.content or ""
     except Exception as e:
         logger.warning("Transcript judge call failed: %s", e)
-        _stash(state, {"scores": {}, "rationale": f"judge_error: {e}"})
+        _stash(state, {"scores": {}, "rationale": f"judge_error: {e}", "composite": 0.0, "rubric": rubric})
         return 0.0
 
-    parsed = _parse_json(raw, default={"scores": {}, "rationale": "parse_error"})
-    scores = parsed.get("scores")
-    if not isinstance(scores, dict) or not scores:
-        # Fallback: maybe the judge returned a flat {"score": x}
-        flat = parsed.get("score")
-        if isinstance(flat, (int, float)):
-            scores = {"overall": float(flat)}
-            parsed["scores"] = scores
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning("Judge returned non-JSON despite strict mode: %s — raw=%r", e, raw[:200])
+        _stash(state, {"scores": {}, "rationale": "parse_error", "composite": 0.0, "rubric": rubric})
+        return 0.0
 
-    if isinstance(scores, dict) and scores:
-        nums = [_clamp01(v) for v in scores.values() if isinstance(v, (int, float))]
-        composite = sum(nums) / len(nums) if nums else 0.0
-    else:
-        composite = 0.0
+    raw_scores = parsed.get("scores") or {}
+    scores = {c["id"]: _clamp01(raw_scores.get(c["id"])) for c in rubric}
+    composite = sum(scores.values()) / len(scores) if scores else 0.0
+    rationale = str(parsed.get("rationale") or "")
 
-    _stash(state, {"scores": scores or {}, "rationale": parsed.get("rationale", ""), "composite": composite})
+    _stash(state, {"scores": scores, "rationale": rationale, "composite": composite, "rubric": rubric})
     return composite
 
 
@@ -106,6 +119,43 @@ _judge_score_count.__name__ = "num_rubric_criteria"
 
 
 # --- helpers ---
+
+
+def _build_response_schema(rubric: list[dict]) -> dict[str, Any]:
+    """Build a strict JSON Schema from the rubric criterion ids."""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for c in rubric:
+        cid = c["id"]
+        properties[cid] = {
+            "type": "number",
+            "description": c.get("description", "") or f"Score for criterion {cid}.",
+        }
+        required.append(cid)
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["scores", "rationale"],
+        "properties": {
+            "scores": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": required,
+                "properties": properties,
+            },
+            "rationale": {"type": "string"},
+        },
+    }
+
+
+def _format_rubric(rubric: list[dict]) -> str:
+    """Render the rubric as a numbered list with anchors inline, for the judge prompt."""
+    lines: list[str] = []
+    for i, c in enumerate(rubric, 1):
+        lines.append(f"{i}. **{c['id']}** — {c['description']}")
+        for a in c.get("anchors") or []:
+            lines.append(f"     - {float(a['score']):.2f} → {a['meaning']}")
+    return "\n".join(lines)
 
 
 def _render_transcript(prompt: Any, completion: Any) -> str:
@@ -166,27 +216,6 @@ def _clamp01(v: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return max(0.0, min(1.0, f))
-
-
-def _parse_json(raw: str, *, default: Any) -> Any:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.lower().startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end > start:
-            try:
-                return json.loads(raw[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-        logger.warning("Could not parse JSON from judge response: %r", raw[:200])
-        return default
 
 
 def _role(msg: Any) -> str:

@@ -65,50 +65,64 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 
 ## Phase 2 — Wire up Verifiers + the reward pipeline
 
-> Decision: LLMStudent first; HumanStudent stays a stub. Grading uses `vf.JudgeRubric` (PI's canonical LLM-judge format). Verifiers v0.1.14 — tool defs are now provider-agnostic (auto-derived from Python function signatures via `convert_func_to_tool_def`); the kickoff's "Chat Completions nested" note is stale.
+> **Reward shape (revised 2026-05-09):** fixed `turns: N` per-task chat loop → full transcript scored by an LLM judge against the task's rubric. **No quiz, no self-rating** in the active path (code kept around for re-enable). Student LLM produces follow-ups every turn — no "ready" decision, no early termination. `turns: 1` ⇒ no student LLM call. Each task can override tutor + student system prompts and pin specific student messages.
+>
+> Grading uses `vf.JudgeRubric` (PI's canonical LLM-judge format). Verifiers v0.1.14 — tool defs are auto-derived via `convert_func_to_tool_def`.
 
 ### Env subclass
 - [x] `TeachingEnv` subclasses `verifiers.MultiTurnEnv`
-- [x] `setup_state(state)` loads materials, topic, turn-count state and injects per-task system prompt
-- [x] `env_response(messages, state)` drives the dialog: tool-dispatch → student.decide → finalize (quiz + self-rate + score)
+- [x] `setup_state(state)` loads per-task fields (turns, materials, topic, rubric, tutor + student system prompts, fixed_student_followups) and injects the per-task tutor system prompt
+- [x] `env_response(messages, state)` drives the dialog: tool-dispatch → fixed student message OR student LLM `respond` → finalize when `completed_turns >= turns`
 - [x] Termination via `state["final_env_response"]` (the `@vf.stop has_final_env_response` predicate); no message-content heuristics
 - [x] `rollout(...)` not overridden (it's `@final` in MultiTurnEnv anyway)
-- [x] Turn cap enforced (`max_student_turns`, default 8) plus a `max_turns` hard ceiling
+- [x] `turns: 1` ⇒ no student LLM call (verified live: tutor responds once, finalize, reward 0.9 in test)
+- [x] `fixed_student_followups[i]` covers turn (i+2); shorter list falls through to student LLM
 
 ### Internal model calls
-- [x] LLMStudent, generate_quiz, score_quiz all take an `AsyncOpenAI` client + model — env wires `rubric.judge_client`/`judge_model` (or override) into both
-- [x] No tutor model names hardcoded; tutor model flows from Verifiers' `client`/`model` rollout args. Env-side LLM defaults to `gpt-4.1-nano` (overridable via `load_environment`)
+- [x] LLMStudent and the transcript judge use an `AsyncOpenAI` client + model — stored on `self._student_client` / `self._judge_client` directly (NOT looked up via `env.rubric`, since MultiTurnEnv wraps it in a RubricGroup)
+- [x] No tutor model names hardcoded; tutor model flows from Verifiers' `client`/`model` rollout args. Env-side LLM defaults to `gpt-5.4-nano` (overridable via `load_environment`); judge sampling temperature defaults to 0.2 for grader determinism
+- [x] Per-task tutor + student system prompts; defaults interpolate `{materials}` and `{topic}`
 
 ### Student
-- [x] `LLMStudent.decide` implemented (returns `{"action": "follow_up"|"ready", "question": ...}`; JSON-parsed with fallback)
-- [x] `LLMStudent.answer_quiz` implemented (per-item JSON, MCQ + free-response)
-- [x] `LLMStudent.self_rate` implemented (1–5 Likert × clarity/coverage/confidence + free-text "still confusing")
+- [x] `LLMStudent.respond` — produces next student message given the conversation; no decision branching
+- [x] `Student` Protocol — active method is `respond`; `decide`/`answer_quiz`/`self_rate` kept around as legacy
 - [ ] `HumanStudent.*` — **deferred** (LLM-first per kickoff alignment)
 
 ### Grader
-- [x] `generate_quiz` produces 3 MCQ + 1 free-response, conditioned on teaching trace + materials
-- [x] `score_quiz` computes per-item correctness (MCQ exact-match; free-response judged by LLM via JudgeRubric pattern) and combines with self-rating
-- [x] Reward weighting: equal-weight composite = (quiz_score + self_rating_score) / 2 (open item to revisit after Phase 4)
-- [x] `TeachingRubric(vf.JudgeRubric)` exposes `composite` as headline reward (weight 1.0) + zero-weight metrics: `quiz_score`, `self_rating_score`, `num_quiz_items`
+- [x] `TeachingRubric(vf.JudgeRubric)` — reward func calls the judge LLM with rubric + materials + transcript, parses JSON, averages per-criterion scores
+- [x] Per-task rubric loaded from `rubric.md`, with a sensible default fallback in `prompts.DEFAULT_RUBRIC`
+- [x] `transcript_score` is the headline reward (weight 1.0); `num_rubric_criteria` is a zero-weight metric so we can spot rubric mismatches
+- [x] `state["judge_breakdown"]` caches the parsed sub-scores + rationale
+- [x] **Quiz / self-rating code kept** in `grader/quiz.py` and `LLMStudent.{answer_quiz, self_rate}` for re-enable later — not wired into env_response
 
 ### Tools
 - [x] `image_gen` stub authored as a function; tool def auto-derived via `convert_func_to_tool_def`
 - [x] Tool dispatch wired into `env_response` — checks `messages[-1].tool_calls`, dispatches via `_tool_map`, returns `ToolMessage`s
 
 ### Dataset
-- [x] `dataset.py` — discovers tasks from `tasks/<subject>/<topic>/`, loads `meta.yaml` + `seed_question.md` + `materials/*.md`
+- [x] `dataset.py` — discovers tasks from `tasks/<subject>/<topic>/`, loads `meta.yaml` + `seed_question.md` + `materials/*.md` + optional `rubric.md`
 - [x] `info` column serialized as JSON string (flat schema; HF won't reject mixed shapes)
-- [x] One sample task authored: `cs/recursion_base_cases/` (intentionally a bit thin, to stress the "bridge to materials" failure mode)
+- [x] Per-task fields: `turns`, `tutor_system_prompt`, `student_system_prompt`, `fixed_student_followups`, `rubric` (all optional with defaults)
+- [x] No plain-string `task` column (verifiers v0.1.14 rejects it)
+- [x] Sample tasks authored:
+  - `cs/recursion_base_cases/` — `turns: 3`, with materials/, per-task `rubric.md` (clarity / diagnosis / bridging / transfer)
+  - `cs/intro_python_hello_world/` — `turns: 4`, **no materials**, custom tutor + student prompts (student is a confederate beginner with Python installed), per-task `rubric.md` (diagnosis / anti_firehose / skill_appropriate / scaffolding); seed message verbatim per HUMAN_SCRATCHPAD.md. **Not yet tested live** (per user request).
 
 ### Smoke test
-- [x] Argparse: `--task`, `--tutor-model`, `--judge-model`, `--base-url`, `--api-key-env`, `--max-student-turns`, `--live`
-- [x] `--dry-run` (default) builds the dataset + imports env + lists tools, no API calls — fastest way to validate setup
-- [x] `--live` runs a full rollout via `env.evaluate` (or `env.generate` fallback) and prints the score breakdown
-- [ ] **Acceptance:** end-to-end rollout printed score breakdown — _pending_ (requires `pip install -e .` + API key; user should run)
+- [x] Argparse: `--task`, `--tutor-model`, `--judge-model`, `--base-url`, `--api-key-env`, `--default-turns`, `--live`
+- [x] `--dry-run` (default) builds dataset + imports env + lists tools + prints per-task config (turns, prompt lengths, rubric length)
+- [x] `--live` runs a full rollout via `env.evaluate(client=ClientConfig(...), model=..., num_examples=1, rollouts_per_example=1)`
+- [x] **Acceptance:** end-to-end rollout printed score breakdown — **DONE 2026-05-09**. Two live runs with `gpt-4.1-nano` for both tutor and env-side LLM:
+  - `turns: 3` → reward `1.000` (judge full marks across 4 criteria), 3/3 turns completed, stop_condition `has_final_env_response`.
+  - `turns: 1` → reward `0.900`, 1/1 turn completed, **no student LLM call** confirmed (only tutor + seed in the trajectory).
 
 ---
 
 ## Phase 3 — Push v0.1.0 to Prime Intellect (D2 complete)
+
+### Polish before push
+- [ ] Convert `env_response` / `_finalize` / `setup_state` to return typed `vf.UserMessage` / `vf.ToolMessage` instead of raw dicts (silences verifiers `normalize_messages` perf warnings; functional already)
+- [ ] Add a quick test of `cs/intro_python_hello_world` task with `--task cs/intro_python_hello_world --live` (verify the new task runs)
 
 ### Local wheel verification
 - [ ] `pip wheel environments/teachingbench --no-deps -w /tmp/wheel_test` succeeds
@@ -128,8 +142,13 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 
 ### Authoring
 - [ ] 10–20 tasks across math + CS subjects
-- [ ] Each task: materials/, opening question, meta.yaml with difficulty band
-- [ ] Difficulty calibrated per topic (close off easy-quiz hack)
+- [ ] Each task: optional materials/, seed_question.md, meta.yaml with `turns` and difficulty, optional `rubric.md` (else default rubric)
+- [ ] Per-task `turns` calibrated (1-turn for "explain X" prompts; 4–6 for back-and-forth concepts)
+
+### Reliability check (per HUMAN_SCRATCHPAD.md, BEFORE running headline baselines)
+- [ ] Write a script that reruns each task N times with fixed seeds, reports per-task reward variance
+- [ ] Define a variance threshold above which a task is considered too noisy to use
+- [ ] Tighten rubric or task content for any task that exceeds the threshold
 
 ### Baseline run
 - [ ] ≥3 capability-stratified tutor models picked
@@ -195,3 +214,10 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 
 - _2026-05-09: kickoff alignment — switched to multi-turn, added human-in-the-loop student support, switched reward shape to LLM-generated quiz + self-rating (away from kickoff's static held-out probe), added image-gen as a stub tool in v0.1 (not deferred entirely)._
 - _2026-05-09: Phase 2 wiring — `HumanStudent` deprioritized (LLMStudent first, since PI is automated); grading anchored on `vf.JudgeRubric` (PI's canonical LLM-judge format) rather than a custom interface; bumped `verifiers>=0.1.14` and switched tool defs to provider-agnostic flat dicts auto-derived via `convert_func_to_tool_def` (kickoff's "Chat Completions nested" guidance was for v0.1.5 and is stale)._
+- _2026-05-09: Phase 2 live test — passed with `composite=0.833`. Verifiers v0.1.14 surprises encountered and resolved: tutor client must be `ClientConfig` not raw `AsyncOpenAI`; `evaluate` takes `num_examples` not `num_rollouts`; dataset can't have a plain-string `task` column; `MultiTurnEnv` wraps your rubric in a `RubricGroup`, so don't look up env-side LLM clients via `env.rubric` — store on `self._*` instead. All gotchas saved to memory under `feedback_verifiers_v014_api_gotchas.md`._
+- _2026-05-09: Open issue (non-blocking) — `env_response`/`get_prompt_messages` return raw dicts, triggering verifiers warnings about repeated `normalize_messages()` overhead. Functional but inefficient; convert to `vf.UserMessage`/`vf.ToolMessage` types when polishing for Phase 3._
+- _2026-05-09: Open issue (Phase 4 follow-up) — student LLM never signaled "ready" within 8 turns on the live test; hit turn cap. Tune the student prompt to encourage earlier readiness, otherwise rollouts are needlessly expensive._
+- _2026-05-09: Reward-shape pivot — dropped quiz + self-rating from the active path. Reward = LLM judge scores the full chat transcript against the per-task rubric. `turns: N` per task now drives the loop length (no early-termination decision from the student). Each task can override tutor + student system prompts and pin specific student messages. Quiz/self-rating code kept in repo (`grader/quiz.py`, `LLMStudent.answer_quiz`/`self_rate`) but unused. Live verified: `turns: 3` ⇒ reward 1.000; `turns: 1` ⇒ reward 0.900 with no student LLM call._
+- _2026-05-09: Model defaults bumped from `gpt-4.1-nano` → `gpt-5.4-nano` for env-side LLM (judge + simulated student); judge sampling temperature 0.0 → 0.2 per HUMAN_SCRATCHPAD.md. Updated in `env.py`, `grader/judge.py`, `smoke_test.py`. Reasoning: even frontier models teach poorly, so don't sandbag the env-side LLM with an older generation just because the kickoff doc happened to use it. Saved as a feedback memory._
+- _2026-05-09: New sample task `cs/intro_python_hello_world` added — no materials, custom tutor + student prompts (student is a Python-installed but never-coded confederate), strict 4-criterion rubric (diagnosis / anti_firehose / skill_appropriate / scaffolding), seed message pinned verbatim. Not yet tested live (per user)._
+- _2026-05-09: Open follow-up surfaced from HUMAN_SCRATCHPAD.md — need a reliability-check script that reruns each task N times with fixed seeds and reports inter-trial reward variance. High variance ⇒ task / rubric needs tightening before it can land in baseline report. Saved as a project memory._

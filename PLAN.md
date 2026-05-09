@@ -22,29 +22,35 @@ Pitch line: **failure-frontier framing**, not "we built an eval." Audience: frie
 
 ## Phase 0 — Decisions (RESOLVED)
 
-| Question | v0.1 answer |
-|---|---|
-| Subjects | **Math + CS** |
-| Single-turn vs multi-turn | **Multi-turn** — student can ask follow-ups before being quizzed |
-| Source material format | Markdown only |
-| Modality | Text-only tutor responses, **but tool-calling supported** including a stubbed image-gen tool |
-| Student | LLM by default, **must also support human-in-the-loop** (student-in-the-loop verification, not pure self-play) |
-| Reward shape | **LLM-generated quiz + student self-rating** (replaces the kickoff's held-out-probe-only design). Judge LLM is v0.2. |
-| Model entry point | Very general per Prime Intellect — don't pin model names; use the `AsyncOpenAI` client Verifiers passes in |
-| Topic count for v0.1 | 10–20 hand-authored across math + CS |
-| Public/held-out split | All public for v0.1; revisit for v0.2 |
-| Demo format (D5) | TBD — decide later, possibly both dashboard and Loom |
-| Sibling project access | **No access** to `~/PolicyRLEnv/` — derive Prime/Verifiers patterns from the kickoff doc only |
+| Question                  | v0.1 answer                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Subjects                  | **Math + CS**                                                                                                        |
+| Single-turn vs multi-turn | **Multi-turn**, fixed `turns: N` per task (1..N). `turns: 1` ⇒ no student LLM call.                                  |
+| Source material format    | Markdown only                                                                                                        |
+| Modality                  | Text-only tutor responses, **but tool-calling supported** including a stubbed image-gen tool                         |
+| Student                   | LLM is the v0.1 active path; `HumanStudent` stays a stub. Each task gets its own student system prompt.              |
+| Reward shape              | **LLM judge scores the full transcript against the per-task rubric.** No quiz, no self-rating in v0.1.               |
+| Per-task customization    | Each task can override tutor + student system prompts AND pin specific student messages (`fixed_student_followups`). |
+| Model entry point         | Very general per Prime Intellect — don't pin model names; use the `AsyncOpenAI` client Verifiers passes in           |
+| Topic count for v0.1      | 10–20 hand-authored across math + CS                                                                                 |
+| Public/held-out split     | All public for v0.1; revisit for v0.2                                                                                |
+| Demo format (D5)          | TBD — decide later, possibly both dashboard and Loom                                                                 |
+| Sibling project access    | **No access** to `~/PolicyRLEnv/` — derive Prime/Verifiers patterns from the kickoff doc only                        |
 
-### Reward pipeline
+### Reward pipeline (revised 2026-05-09)
 ```
-tutor teaches (multi-turn, with tool access)
-    → grader generates quiz (LLM, post-teaching, targets what was actually taught)
-    → student answers + self-rates
-    → reward = quiz score + self-rating  (weighting TBD; start equal-weighted)
+for turn in 1..N (per-task):
+  if turn == 1: student message = task's seed_question.md (always pinned)
+  else if task pinned this turn's message: use it (no student LLM call)
+  else: student LLM produces follow-up given the conversation
+  tutor responds (with tool access; image_gen stubbed)
+
+after N turns:
+  full transcript + materials + per-task rubric → LLM judge → JSON {scores: {criterion: 0..1}}
+  reward = mean of per-criterion scores
 ```
 
-This shape is harder to reward-hack than judge-only AND avoids the leakage problem of static held-out probes (because the quiz is generated *after* teaching, conditioned on what the tutor actually said).
+Why this shape: simplest reward that exercises the failure-frontier (does the tutor scaffold, bridge to materials, diagnose gaps?), aligns with PI's `vf.JudgeRubric` format, and stays cheap. Quiz + self-rating code remains in `grader/quiz.py` and `LLMStudent.{answer_quiz, self_rate}` for re-enable when we want a reward signal harder to game than judge-only — but defer that until baselines from this shape show whether the judge alone is enough discriminating.
 
 ---
 
@@ -65,9 +71,9 @@ What landed:
 
 ---
 
-## Phase 2 — Wire up Verifiers + the reward pipeline
+## Phase 2 — Wire up Verifiers + the reward pipeline ✓ (DONE 2026-05-09)
 
-Goal: a single end-to-end task runs through `prime env push` plumbing locally.
+End-to-end live rollouts working: `turns: 3` ⇒ reward 1.000; `turns: 1` ⇒ reward 0.900 with no student LLM call. See `PROGRESS.md` for the per-checkbox status.
 
 ### Sub-steps
 
@@ -119,21 +125,22 @@ cd /tmp && python -m teachingbench.smoke_test
 Lead with the failure-frontier line. Concrete failure mode → trace as evidence → why it matters commercially (AI tutoring vertical, lab need for teaching reward models, EdTech buyer path through NWEA MAP / formative assessments).
 
 ### D4 — Data/rubric card
-- What the reward measures (quiz score + self-rating; weighting; what they each capture).
-- Public vs held-out (v0.1: all public; quizzes are generated post-hoc not stored).
-- Reward-hack surfaces (kickoff §4):
-  - **Tutor leaks quiz answers** during teaching → quiz is post-teaching and conditioned on the trace, but the *materials* are visible to both tutor and quiz-generator; flag if quiz items are too verbatim with the materials.
-  - **Self-rating gaming** → check correlation between self-rating and quiz score; flag rollouts where the gap is unusually large (could indicate either a confused student or a sycophantic tutor).
-  - **Tutor and student share priors** → use different model families.
-  - **Easy quiz** → calibrate difficulty per topic and audit per-topic quiz hit-rate.
-  - **Judge inflation (v0.2)** → rubric-bound judge with anchored examples when judge LLM is added.
-- Known caveats (v0.1: multi-turn but bounded turn count; markdown-only materials; small N; image-gen stubbed).
+- What the reward measures: LLM judge scores the full transcript against the per-task rubric. Reward = mean of per-criterion sub-scores in [0, 1].
+- Public vs held-out (v0.1: all public; rubrics + system prompts are visible to anyone running the env).
+- Reward-hack surfaces:
+  - **Judge inflation for confident-sounding answers.** Per-task rubrics are prose criteria; the judge can be swayed by verbosity / confident tone. Mitigation: rubrics call out what NOT to score on; v0.2 anchored examples + a stricter judge prompt.
+  - **Tutor and judge share priors.** The same model family judging itself inflates scores. Use a different judge model family from any tutor under test, especially for the headline baseline numbers.
+  - **Tutor sees rubric (it doesn't).** The rubric is in `info`, not in the tutor's system prompt — confirm during authoring that no task accidentally pastes the rubric into the tutor prompt.
+  - **Student LLM as evaluator vs participant.** The student LLM produces follow-ups; it does NOT score. But if student and judge are the same model, biased follow-ups can shape the transcript favorably for the judge. Use different families for student and judge if budget allows.
+  - **Pinned student messages reduce realism.** Tasks with all turns fixed make the env more reproducible but lose the "real student would push back here" signal. Reserve fully-pinned tasks for regression / ablation use cases.
+  - **Quiz / self-rating re-enable (later).** Existing pitfalls (probe leakage, easy quiz) come back if/when we re-enable; documented in `grader/quiz.py`.
+- Known caveats (v0.1: bounded `turns: N` per task; markdown-only materials; small N tasks; image-gen stubbed; same model often plays student and judge for cost reasons).
 
 Use prose + concrete examples, not rigid structured fields.
 
 ### D5 — Demo artifact
 - Format TBD — possibly both. Dashboard reference: <https://meeting-intent-dashboard.vercel.app/>.
-- Must show: a tutor response that scored low + the materials it was teaching off + the quiz the student failed + the grader catching it.
+- Must show: a tutor transcript that scored low + the materials it was teaching off + the per-task rubric + the judge's per-criterion sub-scores + the rationale.
 
 **Acceptance:** D1, D4, D5 done.
 
@@ -143,9 +150,9 @@ Use prose + concrete examples, not rigid structured fields.
 
 Run on a friend at a lab:
 
-> Show a sample tutor response that scored low, the materials it was teaching off-of, the quiz the student failed, and ask: "is this measuring something real that current models are bad at, that you'd want to RL against?"
+> Show a sample tutor transcript that scored low, the materials it was teaching off-of, and the per-criterion judge breakdown, and ask: "is this measuring something real that current models are bad at, that you'd want to RL against?"
 
-**Yes →** ship. **"Could be judge-LLM noise" →** back to Phase 2 to tighten the reward (e.g., add the v0.2 weighted judge, tighten quiz difficulty calibration, or revisit self-rating weighting).
+**Yes →** ship. **"Could be judge-LLM noise" →** back to Phase 2 to tighten: re-enable the quiz path (`grader/quiz.py` is dormant), add anchored rubric examples, swap to a different judge model family.
 
 **Total time-to-shippable-v0.1: ~2–3 weeks** (per kickoff §9), now that Phase 0 is decided cleanly.
 
@@ -153,9 +160,11 @@ Run on a friend at a lab:
 
 ## Notes on what's still open
 
-These don't block Phase 2 but should get answers before Phase 4:
+These don't block Phase 3 but should get answers before Phase 4:
 
-- **Self-rating schema.** Single Likert? Multi-dimensional (clarity / coverage / confidence-i-could-do-it-myself)? Free-text + extracted? Default proposal: 1–5 Likert across 3 axes (clarity, coverage, confidence) + one free-text "what's still confusing."
-- **Reward weighting.** Equal-weight quiz score and self-rating to start; revisit after Phase 4 traces show whether they correlate or diverge usefully.
-- **Turn budget.** Cap multi-turn dialog at e.g. 8 student-side turns to prevent infinite back-and-forth from inflating cost / blowing up the env.
+- **Per-task `turns` defaults.** What's a good default for math vs CS topics? Some concepts are 1-turn ("explain factorial"); some need 4–6 turns of back-and-forth. Phase 4 authoring will calibrate per-topic.
+- **Per-task rubric authoring.** First sample task has a custom rubric (clarity / diagnosis / bridging / transfer). Decide whether subjects share a common rubric template or each task gets its own — probably "shared default + per-task overrides where the failure mode is specific."
+- **Quiz / self-rating re-enable trigger.** Re-enable when transcript-judge baselines saturate or look noisy. Until then, code stays in repo unused.
+- **Convert env messages to `vf.UserMessage` / `vf.ToolMessage`.** Verifiers warns about repeated `normalize_messages` overhead; functional but inefficient. Polish before Phase 3 push.
+- **Student readiness on free-form runs.** Not relevant in current design (turns are fixed), but worth keeping in mind if we re-enable a "student decides" mode later.
 - **Prior intern's repo.** First-version teaching benchmark exists at <https://github.com/hujalex/teaching-benchmark> — borrow ideas (parsing approaches, NLP libs they tried), don't fork.

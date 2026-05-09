@@ -41,7 +41,14 @@ def discover_tasks(root: Path | None = None) -> list[Path]:
 
 def load_task(task_dir: Path) -> dict[str, Any]:
     meta = yaml.safe_load((task_dir / "meta.yaml").read_text()) or {}
-    seed_question = (task_dir / "seed_question.md").read_text().strip()
+
+    # seed_question: meta.yaml field first, then seed_question.md as fallback.
+    seed_question = (meta.get("seed_question") or "").strip()
+    if not seed_question:
+        seed_path = task_dir / "seed_question.md"
+        if not seed_path.is_file():
+            raise ValueError(f"{task_dir}: needs a `seed_question` in meta.yaml or a seed_question.md file")
+        seed_question = seed_path.read_text().strip()
 
     materials_dir = task_dir / "materials"
     materials_chunks: list[str] = []
@@ -50,21 +57,30 @@ def load_task(task_dir: Path) -> dict[str, Any]:
             materials_chunks.append(f"## {path.stem}\n\n{path.read_text().strip()}")
     materials = "\n\n---\n\n".join(materials_chunks)
 
-    rubric_path = task_dir / "rubric.md"
-    rubric = rubric_path.read_text().strip() if rubric_path.is_file() else DEFAULT_RUBRIC
+    # rubric: structured list of criteria. Default fallback is DEFAULT_RUBRIC.
+    raw_rubric = meta.get("rubric")
+    if isinstance(raw_rubric, list) and raw_rubric:
+        rubric = _validate_rubric(raw_rubric, where=str(task_dir / "meta.yaml"))
+    else:
+        rubric = DEFAULT_RUBRIC
 
     topic = meta.get("topic", task_dir.name)
 
+    # Tutor: per-task replaces the default. (Default is empty — realistic ChatGPT use.)
     tutor_prompt = render_prompt(
         meta.get("tutor_system_prompt") or DEFAULT_TUTOR_SYSTEM_PROMPT,
         materials=materials,
         topic=topic,
     )
-    student_prompt = render_prompt(
-        meta.get("student_system_prompt") or DEFAULT_STUDENT_SYSTEM_PROMPT,
-        materials=materials,
-        topic=topic,
-    )
+
+    # Student: per-task is APPENDED to the default behavior rules. The default is the
+    # general "how to act like a beginner" contract; the per-task append carries the
+    # subject context (what's installed, what materials they have, etc.).
+    task_student = str(meta.get("student_system_prompt") or "").strip()
+    combined_student = DEFAULT_STUDENT_SYSTEM_PROMPT.rstrip()
+    if task_student:
+        combined_student = combined_student + "\n\n" + task_student
+    student_prompt = render_prompt(combined_student, materials=materials, topic=topic)
 
     fixed_followups = meta.get("fixed_student_messages") or []
     if not isinstance(fixed_followups, list):
@@ -83,6 +99,41 @@ def load_task(task_dir: Path) -> dict[str, Any]:
         "student_system_prompt": student_prompt,
         "fixed_student_followups": [str(m) for m in fixed_followups],
     }
+
+
+def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
+    out: list[dict] = []
+    seen_ids: set[str] = set()
+    for i, item in enumerate(rubric):
+        if not isinstance(item, dict):
+            raise ValueError(f"{where}: rubric[{i}] must be a mapping, got {type(item).__name__}")
+        cid = item.get("id")
+        if not isinstance(cid, str) or not cid.strip():
+            raise ValueError(f"{where}: rubric[{i}].id must be a non-empty string")
+        cid = cid.strip()
+        if cid in seen_ids:
+            raise ValueError(f"{where}: duplicate rubric id {cid!r}")
+        seen_ids.add(cid)
+        desc = str(item.get("description") or "").strip()
+        if not desc:
+            raise ValueError(f"{where}: rubric[{cid}].description must be a non-empty string")
+        anchors = item.get("anchors") or []
+        clean_anchors: list[dict] = []
+        for j, a in enumerate(anchors):
+            if not isinstance(a, dict):
+                raise ValueError(f"{where}: rubric[{cid}].anchors[{j}] must be a mapping")
+            try:
+                score = float(a.get("score"))
+            except (TypeError, ValueError):
+                raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].score must be a number")
+            meaning = str(a.get("meaning") or "").strip()
+            if not meaning:
+                raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].meaning must be non-empty")
+            clean_anchors.append({"score": score, "meaning": meaning})
+        out.append({"id": cid, "description": desc, "anchors": clean_anchors})
+    if not out:
+        raise ValueError(f"{where}: rubric must have at least one criterion")
+    return out
 
 
 def render_prompt(template: str, *, materials: str, topic: str) -> str:
