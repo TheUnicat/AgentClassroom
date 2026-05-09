@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "teachingbench"
+version = "0.1.0"
+description = "RL environment for evaluating how well an LLM teaches a concept off of a student's own course materials. Multi-turn, supports both LLM and human-in-the-loop students, scored by an LLM-generated quiz plus student self-rating."
+requires-python = ">=3.11"
+tags = [
+    "teaching",
+    "education",
+    "tutoring",
+    "tool-use",
+    "multi-turn",
+    "agent",
+    "eval",
+    "train",
+]
+dependencies = [
+    "verifiers>=0.1.14",
+    "openai>=1.55",
+    "datasets>=2.20",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+materials = [
+    "markitdown>=0.1.0",
+    "python-frontmatter>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["teachingbench"]
+exclude = [
+    "teachingbench/runs",
+    "teachingbench/runs/**",
+    "teachingbench/outputs",
+    "teachingbench/outputs/**",
+    "teachingbench/.cache",
+    "teachingbench/.cache/**",
+    "**/__pycache__",
+    "**/*.pyc",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true

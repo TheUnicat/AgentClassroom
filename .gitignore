@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# Tooling
+.uv/
+uv.lock
+pip-wheel-metadata/
+.claude/
+.obsidian/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Run artifacts (excluded from wheel via hatchling too)
+environments/*/runs/
+environments/*/outputs/
+environments/*/.cache/
+
+# Wheel test scratch
+/tmp/wheel_test/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
