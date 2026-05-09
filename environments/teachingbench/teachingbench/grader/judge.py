@@ -24,7 +24,7 @@ class TeachingRubric(vf.JudgeRubric):
     def __init__(
         self,
         judge_client: AsyncOpenAI | None = None,
-        judge_model: str = "gpt-4.1-nano",
+        judge_model: str = "gpt-5.4-nano",
         judge_sampling_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -32,7 +32,7 @@ class TeachingRubric(vf.JudgeRubric):
             judge_client=judge_client,
             judge_model=judge_model,
             judge_prompt=TRANSCRIPT_JUDGE_PROMPT,
-            judge_sampling_args=judge_sampling_args or {"temperature": 0.0},
+            judge_sampling_args=judge_sampling_args or {"temperature": 0.2},
             **kwargs,
         )
         self.add_reward_func(_transcript_score, weight=1.0)

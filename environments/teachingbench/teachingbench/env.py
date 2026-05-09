@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 def load_environment(
     *,
     judge_client: AsyncOpenAI | None = None,
-    judge_model: str = "gpt-4.1-nano",
+    judge_model: str = "gpt-5.4-nano",
     student_client: AsyncOpenAI | None = None,
     student_model: str | None = None,
     default_turns: int = 4,
@@ -221,15 +221,18 @@ def _info_dict(state: vf.State) -> dict[str, Any]:
 
 
 def _ensure_system(prompt: Any, system_content: str) -> Any:
-    """Prepend or replace the system message with our task-specialized one."""
-    if isinstance(prompt, list) and prompt and _role(prompt[0]) == "system":
-        return [{"role": "system", "content": system_content}] + list(prompt[1:])
+    """Prepend / replace the system message, OR strip any system messages if
+    `system_content` is empty. Empty content reflects the realistic 'user opened
+    ChatGPT and pasted the question' default — the model gets no system prompt at all.
+    """
+    has_content = bool((system_content or "").strip())
     if isinstance(prompt, list):
-        return [{"role": "system", "content": system_content}] + list(prompt)
-    return [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": str(prompt)},
-    ]
+        non_system = [m for m in prompt if _role(m) != "system"]
+        if has_content:
+            return [{"role": "system", "content": system_content}] + non_system
+        return non_system
+    user_msg = {"role": "user", "content": str(prompt)}
+    return [{"role": "system", "content": system_content}, user_msg] if has_content else [user_msg]
 
 
 def _tool_calls(msg: Any) -> list[Any]:

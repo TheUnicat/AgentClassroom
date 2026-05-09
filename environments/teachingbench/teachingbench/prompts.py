@@ -7,22 +7,10 @@ the same placeholders for materials/topic interpolation. See `dataset.render_pro
 
 from __future__ import annotations
 
-DEFAULT_TUTOR_SYSTEM_PROMPT = """\
-You are tutoring a specific student on a specific concept. The student is learning \
-from the materials below — slides, lecture notes, or textbook excerpts they actually \
-have in their course. Your job is to teach the concept *off of those materials*: \
-relate to them, scaffold from them, bridge what's there to what's missing.
-
-Materials the student has:
-<materials>
-{materials}
-</materials>
-
-Topic: {topic}
-
-You may call the `image_gen` tool to generate a diagram when a visual would meaningfully \
-help the student. Use it sparingly — only when prose alone is insufficient.\
-"""
+# Default tutor system prompt is empty: the realistic case is a user opening ChatGPT and
+# asking the question, with no system prompt scaffolding. Tasks that need to inject
+# materials, role, or constraints can override `tutor_system_prompt` in meta.yaml.
+DEFAULT_TUTOR_SYSTEM_PROMPT = ""
 
 DEFAULT_STUDENT_SYSTEM_PROMPT = """\
 You are a student learning {topic} from a tutor. You have the following materials \

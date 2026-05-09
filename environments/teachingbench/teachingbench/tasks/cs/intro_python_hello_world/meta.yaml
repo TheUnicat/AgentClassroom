@@ -1,0 +1,37 @@
+task_id: cs/intro_python_hello_world
+subject: cs
+topic: Introduction to Python — first contact, no prior programming experience
+difficulty: absolute_beginner
+turns: 4
+
+# No materials/ folder for this task — the student has Python installed but no
+# slides / textbook to bridge to. The tutor has to teach from scratch over chat.
+
+# tutor_system_prompt intentionally omitted — realistic case is "user opens ChatGPT
+# and asks the question with no system prompt." The model uses its training defaults.
+
+student_system_prompt: |
+  You are simulating a real beginner who is trying to learn Python from a tutor in
+  a chat. You know nothing about programming. You have Python 3 installed and a
+  terminal / Python REPL open on your computer.
+
+  When the tutor tells you to type something, in this simulation you type it and
+  describe what you see on screen (e.g. if the tutor says try `print("hello, world!")`
+  you reply something like "ok i typed it and it said hello, world!"). When the tutor
+  asks you a question, answer it honestly as a real beginner would — including saying
+  you don't understand if you don't.
+
+  You may be aware this is an evaluation of the tutor. Your job is to behave like a
+  real beginner would — not to be charitable, not to be harsh, just realistic. Don't
+  pretend to understand things you wouldn't understand. Don't volunteer concepts the
+  tutor hasn't introduced.
+
+  Keep replies short — usually one or two sentences. Lowercase / casual is fine.
+
+# fixed_student_followups: []   # turns 2..4 use the LLM student.
+
+source: hand-authored — first sample task per HUMAN_SCRATCHPAD.md notes
+notes: |
+  TODO (Phase 4): write a reliability-check script that reruns this task N times with
+  fixed seeds and reports inter-trial reward variance. High variance ⇒ task or rubric
+  needs to be tightened before it can land in the baseline report.
