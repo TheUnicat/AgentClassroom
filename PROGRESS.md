@@ -148,6 +148,8 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 
 ### Reliability checks (BEFORE running headline baselines)
 
+> **Headline 2026-05-10: both reliability axes are good.** Judge composite CV=0.039 over n=8 replays of a fixed transcript; task (full-pipeline) composite CV=0.055 over n=6 fresh rollouts of intro_python with gpt-5.4-mini. This was the highest-risk part of the project per HUMAN_SCRATCHPAD.md and it came back cleaner than expected — the current rubric / temperature / judge config is sound. Practical noise floor on the composite is ~±0.04, so baselines need n≥4 each and Δreward > ~0.08 for confident ranking.
+
 Two kinds — both needed before Phase 4 numbers are trustworthy.
 
 **A) Judge reliability — same judge replays same transcript N times**
@@ -163,10 +165,19 @@ Two kinds — both needed before Phase 4 numbers are trustworthy.
   - Original saved score 0.625 was at the LOW end of the new distribution (mean 0.706, range 0.625–0.800). Confirms single-shot scores under-report as easily as over-report.
   - **Takeaway:** the composite looks fine but masks per-criterion problems. `anti_firehose` is the rubric criterion most in need of tightened anchors / concrete length thresholds. Subjective/spectrum criteria are noisier than objective/yes-no criteria.
 
-**B) Inter-trial rollout reliability — same task, multiple full rollouts**
-- [ ] Script that reruns each task N times (fresh tutor + student LLM each time), reports per-task reward variance
+**B) Task (full-pipeline) reliability — same task, multiple full rollouts**
+- [x] `environments/teachingbench/teachingbench/task_reliability_check.py` — uses `env.evaluate(rollouts_per_example=N)` for parallel full rollouts, one-shot judging per trial
+- [x] CLI: `python -m teachingbench.task_reliability_check --task-id ... --tutor-model ... --n 6`
+- [x] Shared stats helpers extracted into `_reliability_helpers.py` (used by both reliability checks)
+- [x] **First run, 2026-05-10:** `cs/intro_python_hello_world`, tutor + student = `gpt-5.4-mini`, judge = `gpt-5.4-nano`, n=6, ~19s wall-clock at max_concurrent=3.
+  - Per-trial composites: `[0.767, 0.733, 0.800, 0.733, 0.833, 0.733]`
+  - Composite CV=0.055 (very stable for full-pipeline noise)
+  - Per-criterion CVs: clarity 0.041, anti_firehose 0.077, scaffolding 0.113. `bridging` null on 6/6 (correct).
+  - `anti_firehose` stable here (0.077) — confirms the rubric tightening fixed the old 0.307 problem.
+  - `scaffolding` is the noisiest criterion at 0.113. Worth monitoring.
+- [x] **Practical implication:** noise floor on composite is ~±0.04. Baseline comparisons need n≥4 each AND a difference > ~0.08 for confident ranking.
 - [ ] Define a variance threshold above which a task is considered too noisy to use
-- [ ] Tighten rubric or task content for any task that exceeds the threshold
+- [ ] Run on the recursion task and any other Phase 4 tasks before they ship
 
 ### Baseline run
 - [ ] ≥3 capability-stratified tutor models picked

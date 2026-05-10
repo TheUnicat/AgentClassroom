@@ -195,23 +195,27 @@ Run on a friend at a lab:
 
 ## Reliability testing (separate from Phase 4 baselines)
 
+> **Status (2026-05-10):** both reliability axes are well within acceptable bounds. Judge reliability composite CV=0.039 (n=8 replays of a fixed transcript). Task / full-pipeline reliability composite CV=0.055 (n=6 fresh rollouts of intro_python with gpt-5.4-mini). This was the failure mode flagged in HUMAN_SCRATCHPAD.md as the highest-risk part of the whole project ("very very important to check reliability of each task — it's very bad if huge inter-trial variation"). It came back cleaner than expected; the rubric / temperature / judge config we have is sound. Re-test on each new task before it ships, but don't expect surprises.
+
 Two distinct kinds of variance to measure — both with their own scripts:
 
 ### A. Judge reliability — same judge, same transcript, repeated
 
 Replay an existing saved rollout's transcript through the judge LLM N times. Captures **judge-only noise**: how much the same judge model disagrees with itself on the exact same input. If this is high, judge prompt / rubric needs tightening (anchored examples, lower temperature, stricter rubric language).
 
-- Script: `environments/teachingbench/teachingbench/reliability_check.py`
-- CLI: `python -m teachingbench.reliability_check <run_id> --n 8 [--judge-model ...]`
+- Script: `environments/teachingbench/teachingbench/judge_reliability_check.py`
+- CLI: `python -m teachingbench.judge_reliability_check <run_id> --n 8 [--judge-model ...]`
 - Reports per-criterion: `n_scored / n`, `min`, `max`, `range`, `median`, `mean`, `stdev`, `CV`. Same for composite.
 
-### B. Inter-trial rollout reliability — same task, multiple fresh rollouts
+### B. Task (full-pipeline) reliability — same task, multiple fresh rollouts
 
-Run the FULL pipeline N times for the same task (different student/tutor seeds). Captures **total system noise** (student behavior + tutor temperature + judge variance). Slower / more expensive.
+Run the FULL pipeline N times for the same task (different student/tutor seeds). Captures **total system noise** (student behavior + tutor temperature + judge variance). Slower / more expensive. One judge call per trial (one-shot judging is fine since A above already characterized judge noise on a fixed transcript).
 
-- Script: TBD (not yet written; tracked under "Open follow-ups").
+- Script: `environments/teachingbench/teachingbench/task_reliability_check.py`
+- CLI: `python -m teachingbench.task_reliability_check --task-id ... --tutor-model ... --n 6 [--student-model ...] [--judge-model ...]`
+- Reports the same stats as judge_reliability_check, plus the per-trial composite values inline.
 
-The judge reliability test is the cheap one to run first — if the JUDGE alone is unreliable, no amount of tutor-side stability fixes the noise floor.
+The judge reliability test is the cheap one to run first — if the JUDGE alone is unreliable, no amount of tutor-side stability fixes the noise floor. Once judge noise is acceptable, run task reliability to characterize how much the rollout itself wobbles trial-over-trial.
 
 ---
 

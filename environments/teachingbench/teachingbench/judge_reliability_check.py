@@ -6,8 +6,11 @@ distinguishing JUDGE noise from full-pipeline noise: if the same judge gives
 wildly different scores to the exact same transcript, the rubric / prompt /
 sampling needs tightening before any baseline numbers in D3 are trustworthy.
 
+For full-pipeline noise (different student responses, different tutor seeds,
+different judge calls all combined), see `task_reliability_check.py`.
+
 Usage:
-    python -m teachingbench.reliability_check <run_id> [--n 8] [--judge-model gpt-5.4-nano]
+    python -m teachingbench.judge_reliability_check <run_id> [--n 8] [--judge-model gpt-5.4-nano]
 
 Where <run_id> is either:
     - a directory name under environments/teachingbench/outputs/runs/  (e.g.
@@ -21,12 +24,12 @@ import argparse
 import asyncio
 import json
 import os
-import statistics
 from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
 
+from teachingbench._reliability_helpers import print_reliability_table
 from teachingbench.grader.judge import judge_transcript
 from teachingbench.prompts import DEFAULT_RUBRIC
 
@@ -168,107 +171,32 @@ async def run_trials(
 # --------------------------------------------------------------------------
 
 
-def stats_for(values: list[float]) -> dict[str, float]:
-    if not values:
-        return {}
-    out = {
-        "min": min(values),
-        "max": max(values),
-        "range": max(values) - min(values),
-        "median": statistics.median(values),
-        "mean": statistics.fmean(values),
-    }
-    if len(values) >= 2:
-        sd = statistics.stdev(values)
-        out["stdev"] = sd
-        out["cv"] = sd / out["mean"] if out["mean"] > 0 else 0.0
-    else:
-        out["stdev"] = 0.0
-        out["cv"] = 0.0
-    return out
-
-
 def print_table(rollout: dict[str, Any], trials: list[dict[str, Any]], n: int) -> None:
     rubric = rollout["rubric"]
     criterion_ids = [c["id"] for c in rubric]
     composites = [t["composite"] for t in trials if "composite" in t]
+    per_trial_scores = [t.get("scores", {}) for t in trials]
+    errors = [t.get("error") for t in trials if t.get("error")]
 
-    # Per-criterion stats
-    print()
-    print(f"=== Judge reliability — n={n} ===")
-    print(f"Task:     {rollout['task_id']}")
-    print(f"Topic:    {rollout['topic']}")
-    print(f"Original reward (from saved rollout): {rollout.get('original_reward'):.3f}" if isinstance(rollout.get("original_reward"), (int, float)) else "Original reward: (n/a)")
-    print()
-
-    cols = [
-        ("criterion", 16),
-        ("scored", 8),
-        ("min", 7),
-        ("max", 7),
-        ("range", 7),
-        ("median", 7),
-        ("mean", 7),
-        ("stdev", 7),
-        ("CV", 7),
-    ]
-    header = "  ".join(label.ljust(w) for label, w in cols)
-    sep = "  ".join("-" * w for _, w in cols)
-    print(header)
-    print(sep)
-
-    for cid in criterion_ids:
-        per_trial = [t["scores"].get(cid) for t in trials]
-        nums = [v for v in per_trial if isinstance(v, (int, float))]
-        n_scored = len(nums)
-        if not nums:
-            row = [cid, f"0/{n}", "—", "—", "—", "—", "—", "—", "—"]
-        else:
-            s = stats_for(nums)
-            row = [
-                cid,
-                f"{n_scored}/{n}",
-                f"{s['min']:.3f}",
-                f"{s['max']:.3f}",
-                f"{s['range']:.3f}",
-                f"{s['median']:.3f}",
-                f"{s['mean']:.3f}",
-                f"{s['stdev']:.3f}",
-                f"{s['cv']:.3f}",
-            ]
-        print("  ".join(str(cell).ljust(w) for cell, (_, w) in zip(row, cols)))
-
-    # Composite
-    print(sep)
-    if composites:
-        s = stats_for(composites)
-        row = [
-            "composite",
-            f"{len(composites)}/{n}",
-            f"{s['min']:.3f}",
-            f"{s['max']:.3f}",
-            f"{s['range']:.3f}",
-            f"{s['median']:.3f}",
-            f"{s['mean']:.3f}",
-            f"{s['stdev']:.3f}",
-            f"{s['cv']:.3f}",
-        ]
-        print("  ".join(str(cell).ljust(w) for cell, (_, w) in zip(row, cols)))
-
-    # Sanity: errors
-    errs = [t.get("error") for t in trials if t.get("error")]
-    if errs:
-        print()
-        print(f"WARNING: {len(errs)}/{n} trials reported errors.")
-        for i, e in enumerate(errs):
-            print(f"  trial {i}: {e}")
-
-    print()
-    print("Interpretation:")
-    print("  CV (coefficient of variation = stdev/mean) is the main reliability dial.")
-    print("  CV < 0.05  → very stable judge.")
-    print("  CV 0.05..0.15 → acceptable for relative ranking; treat absolute values cautiously.")
-    print("  CV > 0.15  → judge is noisy; tighten rubric anchors / lower temperature / try a different model.")
+    orig = rollout.get("original_reward")
+    orig_line = (
+        f"Original reward (from saved rollout): {orig:.3f}"
+        if isinstance(orig, (int, float))
+        else "Original reward: (n/a)"
+    )
+    print_reliability_table(
+        title=f"Judge reliability — n={n}",
+        context_lines=[
+            f"Task:     {rollout['task_id']}",
+            f"Topic:    {rollout['topic']}",
+            orig_line,
+        ],
+        criterion_ids=criterion_ids,
+        per_trial_scores=per_trial_scores,
+        per_trial_composites=composites,
+        n=n,
+        errors=errors,
+    )
 
 
 # --------------------------------------------------------------------------
