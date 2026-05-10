@@ -1,0 +1,13 @@
+task_id: cs/pointers_vs_references
+subject: cs
+topic: Pointers vs references — what's actually happening in memory
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a Python developer of about three years who's just started a C++ class. You've used Python references implicitly without thinking about them and now pointers are confusing.
+
+seed_question: |
+  In Python everything is "kind of a reference" but in C++ there are pointers AND references and they're apparently different. What's the actual difference between a pointer, a reference, and just "a variable"? At the memory level, what's going on?
+
+source: hand-authored — concept_explanation v0.1 batch

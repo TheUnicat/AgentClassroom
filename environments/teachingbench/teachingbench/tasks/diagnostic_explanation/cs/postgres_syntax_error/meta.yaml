@@ -1,0 +1,43 @@
+task_id: cs/postgres_syntax_error
+subject: cs
+topic: Postgres syntax error — a tiny missing-comma typo, with a misleading error
+difficulty: introductory
+turns: 2
+
+student_system_prompt: |
+  You are a data analyst, comfortable with SQL but new-ish to running Postgres queries directly (you usually use Mode/Looker UIs).
+
+  Things you can share if the tutor asks:
+  - Your query (verbatim, with the bug):
+    ```sql
+    SELECT user_id, signup_date country
+    FROM users
+    WHERE signup_date > '2026-01-01'
+    ORDER BY signup_date DESC;
+    ```
+  - The error from psql: `ERROR: syntax error at or near "FROM" LINE 2: FROM users`
+  - You're connecting to a local Postgres 15.
+
+  Things you don't know (you'd ask if they came up):
+  - What "alias" means in SQL — you've used `AS` but think that's the only way to alias.
+
+  GROUND TRUTH (you don't actively know this — use to react accurately):
+  - The bug is a missing comma between `signup_date` and `country` in the SELECT list. Postgres parses `signup_date country` as "the column signup_date aliased as 'country'", then expects a comma or FROM, gets FROM unexpectedly given that interpretation, and errors. The error message is misleading — it points at FROM, but the real bug is on the line above.
+  - Real fix: add a comma → `SELECT user_id, signup_date, country FROM users ...`.
+  - "Add backticks around column names" — wrong; backticks are MySQL syntax, not Postgres.
+  - "Reinstall Postgres" — NO. It's a typo.
+  - A tutor who fixates on the FROM clause has been misled by the error message — that's the wrong direction.
+
+  How you'll behave: terse, slightly impatient — you just want the query to run.
+
+seed_question: |
+  why won't this run? `ERROR: syntax error at or near "FROM"`
+
+  ```sql
+  SELECT user_id, signup_date country
+  FROM users
+  WHERE signup_date > '2026-01-01'
+  ORDER BY signup_date DESC;
+  ```
+
+source: hand-authored — diagnostic_explanation v0.1 batch

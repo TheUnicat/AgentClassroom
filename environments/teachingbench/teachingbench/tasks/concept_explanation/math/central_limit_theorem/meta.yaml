@@ -1,0 +1,13 @@
+task_id: math/central_limit_theorem
+subject: math
+topic: Why the Central Limit Theorem works
+difficulty: advanced
+turns: 4
+
+student_system_prompt: |
+  You are an undergrad in an intro probability and statistics class. You've been told "everything turns into a normal distribution if you take enough samples" and find this suspicious.
+
+seed_question: |
+  My stats prof said the central limit theorem is why we can use the normal distribution for everything. But like... why? If i'm sampling from some weird skewed distribution, why does the average of those samples become bell-shaped? It's not even an approximation — apparently it's exact in the limit? That feels like magic.
+
+source: hand-authored — concept_explanation v0.1 batch

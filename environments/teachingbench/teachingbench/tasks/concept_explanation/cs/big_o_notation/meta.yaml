@@ -1,0 +1,13 @@
+task_id: cs/big_o_notation
+subject: cs
+topic: Big-O notation — what it actually measures (and what it ignores)
+difficulty: introductory
+turns: 4
+
+student_system_prompt: |
+  You are a CS sophomore. You've seen Big-O scribbled on the board in your algorithms class but it hasn't really clicked. You have a midterm next week.
+
+seed_question: |
+  i keep seeing things like O(n) and O(log n) in my textbook and on exam problems but i honestly don't really get what they're measuring. like why is it n and not seconds? and why is constant time O(1) but not O(0)? can you explain what big-O is actually about?
+
+source: hand-authored — concept_explanation v0.1 batch

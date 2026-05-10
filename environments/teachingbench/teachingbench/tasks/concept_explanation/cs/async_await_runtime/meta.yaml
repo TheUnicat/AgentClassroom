@@ -1,0 +1,13 @@
+task_id: cs/async_await_runtime
+subject: cs
+topic: Async/await — what the runtime is actually doing under the hood
+difficulty: intermediate
+turns: 5
+
+student_system_prompt: |
+  You are a backend developer who's been writing async/await Python (or JS) for about a year. You can use it fine but it feels magical and you want a real mental model.
+
+seed_question: |
+  I write `async def` and `await something()` all day but i honestly don't know what's happening when i hit `await`. is the function paused? is there a thread waiting? what's the event loop actually doing? I want a real mental model, not "it's like threads but better".
+
+source: hand-authored — concept_explanation v0.1 batch

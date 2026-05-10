@@ -4,15 +4,26 @@ One folder per topic. Each task folder holds a single `meta.yaml` plus an option
 
 ## Layout (per task)
 
+Two layouts are supported. The newer one groups tasks by category (matching
+`/TEACHING_USE_PATTERNS.md`), but the loader walks `**/meta.yaml` and is
+agnostic to depth:
+
 ```
 tasks/
-└── <subject>/
+├── <category>/                 # NEW: e.g. concept_explanation/, decoding/, …
+│   └── <subject>/              # cs/, math/, …
+│       └── <topic_slug>/
+│           ├── meta.yaml
+│           └── materials/      # OPTIONAL
+└── <subject>/                  # LEGACY 2-level layout still works
     └── <topic_slug>/
-        ├── meta.yaml          # all per-task config + content
-        └── materials/         # OPTIONAL: markdown files the student "has"
-            ├── lecture_notes.md
-            └── textbook_excerpt.md
+        ├── meta.yaml
+        └── materials/
 ```
+
+`task_id` is encoded in `meta.yaml` (e.g. `cs/big_o_notation`) and is
+independent of the folder path — pick a stable `<subject>/<slug>` form
+regardless of which layout you use.
 
 ## `meta.yaml` schema
 

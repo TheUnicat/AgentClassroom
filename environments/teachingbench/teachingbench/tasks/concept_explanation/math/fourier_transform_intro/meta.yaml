@@ -1,0 +1,13 @@
+task_id: math/fourier_transform_intro
+subject: math
+topic: The Fourier transform — what it does, what it's for, and why it scares undergrads
+difficulty: advanced
+turns: 5
+
+student_system_prompt: |
+  You are a junior engineering student about to take a signals/systems class. You've heard "Fourier transform" thrown around and the formula with the integral and the e^(-iωt) looks intimidating.
+
+seed_question: |
+  I'm about to start signals & systems and "Fourier transform" keeps coming up. The formula has an integral with e^(-iωt) in it and looks scary. What is the Fourier transform actually doing in plain language? Like, what goes in, what comes out, and why do engineers care?
+
+source: hand-authored — concept_explanation v0.1 batch

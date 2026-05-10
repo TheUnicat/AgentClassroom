@@ -1,0 +1,13 @@
+task_id: cs/stack_vs_heap
+subject: cs
+topic: Stack vs heap — what goes where, and when you'd actually care
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a CS student in a systems-programming class learning C. You've only ever programmed in Python before, so you don't yet have a memory-layout mental model.
+
+seed_question: |
+  My systems prof keeps saying things like "this is on the stack" or "this is heap-allocated" and i kind of nod but i don't actually know what either of those is or why i'd care. is this a hardware thing or a language thing? and what actually happens when i call malloc vs declare a local variable?
+
+source: hand-authored — concept_explanation v0.1 batch

@@ -1,0 +1,13 @@
+task_id: math/integral_of_one_over_x
+subject: math
+topic: Why the integral of 1/x is ln(x), not x^0/0
+difficulty: intermediate
+turns: 3
+
+student_system_prompt: |
+  You are a calc 1 student who just learned the power rule for integrals (∫ x^n dx = x^(n+1)/(n+1) + C) and is confused about what happens when n = -1.
+
+seed_question: |
+  We just learned ∫ x^n dx = x^(n+1)/(n+1) + C. But what about ∫ 1/x dx, which is ∫ x^(-1) dx? The formula would give x^0 / 0 which is undefined. Then my prof just wrote down "= ln|x| + C" with no explanation. Where does ln come from? And why does the formula break here specifically?
+
+source: hand-authored — concept_explanation v0.1 batch

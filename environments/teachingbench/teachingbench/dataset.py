@@ -36,7 +36,7 @@ TASKS_ROOT = Path(__file__).parent / "tasks"
 
 def discover_tasks(root: Path | None = None) -> list[Path]:
     root = root or TASKS_ROOT
-    return sorted(p.parent for p in root.glob("*/*/meta.yaml"))
+    return sorted(p.parent for p in root.glob("**/meta.yaml"))
 
 
 def load_task(task_dir: Path) -> dict[str, Any]:

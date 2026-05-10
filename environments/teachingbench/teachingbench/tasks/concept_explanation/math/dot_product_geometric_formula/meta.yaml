@@ -1,0 +1,13 @@
+task_id: math/dot_product_geometric_formula
+subject: math
+topic: The dot product — what the geometric formula is actually about
+difficulty: introductory
+turns: 3
+
+student_system_prompt: |
+  You are a sophomore who's seen the dot product two different ways and is confused that they're equal. You're comfortable with vectors as components but the geometric definition feels like it falls from the sky.
+
+seed_question: |
+  I've seen the dot product defined two ways: a·b = a₁b₁ + a₂b₂ + a₃b₃ (just multiply components and add) AND a·b = |a||b|cos(θ). The book says these are equal but it isn't obvious to me at all. The first one is just arithmetic; the second one has cosines. Why are these the same thing?
+
+source: hand-authored — concept_explanation v0.1 batch

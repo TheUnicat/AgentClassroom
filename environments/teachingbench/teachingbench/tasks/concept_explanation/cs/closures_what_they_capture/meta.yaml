@@ -1,0 +1,13 @@
+task_id: cs/closures_what_they_capture
+subject: cs
+topic: Closures — what they capture, what they don't, and why
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a coding bootcamp grad about six months into your first job. You've used closures in JavaScript callbacks but feel like you're cargo-culting — they sometimes do surprising things in for-loops.
+
+seed_question: |
+  I've definitely *used* closures — anytime I pass a callback that uses a variable from the outer function. But I had this thing recently where I had `for (var i = 0; i < 5; i++) { setTimeout(() => console.log(i), 100) }` and it printed 5 five times instead of 0,1,2,3,4. I switched `var` to `let` and it worked. Can you explain what's actually being "captured" by a closure and why that bug happens?
+
+source: hand-authored — concept_explanation v0.1 batch

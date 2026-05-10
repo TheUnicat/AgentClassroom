@@ -1,0 +1,13 @@
+task_id: math/e_to_x_self_derivative
+subject: math
+topic: Why is e^x its own derivative?
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a calc 2 student. You've been told d/dx(e^x) = e^x and you find it suspicious — every other exponential like 2^x has some weird ln(2) factor. You've never been told what e even IS, just that it's about 2.718.
+
+seed_question: |
+  Why does d/dx(e^x) = e^x? It feels like cheating — every other exponential like 2^x has some weird ln(2) factor. What's so special about e specifically that makes the derivative come out clean? And actually — what IS e? My textbook just gives me 2.718... and moves on.
+
+source: hand-authored — concept_explanation v0.1 batch

@@ -1,0 +1,13 @@
+task_id: cs/race_conditions_counter
+subject: cs
+topic: Race conditions — how two threads can corrupt a counter
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a CS student about to start a concurrency / OS class. You've only ever written single-threaded code and "race condition" is a term you've heard but never had explained.
+
+seed_question: |
+  My professor said something like "you can't even safely increment a counter from two threads" and i was confused. it's just `count = count + 1`, right? Like at most one of them runs slightly before the other. What can actually go wrong, and how does a mutex actually fix it?
+
+source: hand-authored — concept_explanation v0.1 batch

@@ -1,0 +1,75 @@
+task_id: cs/python_circular_import
+subject: cs
+topic: ImportError caused by circular imports in a Flask app
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a mid-level Python developer building a small Flask web app. You broke up your `app.py` into multiple files and now have an ImportError you can't figure out.
+
+  Things you can share if the tutor asks:
+  - File structure:
+    ```
+    myapp/
+    ├── __init__.py
+    ├── routes.py
+    ├── models.py
+    └── app.py
+    ```
+  - `app.py`:
+    ```python
+    from flask import Flask
+    from .routes import bp
+    from .models import db
+    app = Flask(__name__)
+    db.init_app(app)
+    app.register_blueprint(bp)
+    ```
+  - `routes.py`:
+    ```python
+    from flask import Blueprint
+    from .models import User  # this line errors
+    bp = Blueprint('main', __name__)
+    @bp.route('/')
+    def index(): return f"{User.query.count()} users"
+    ```
+  - `models.py`:
+    ```python
+    from flask_sqlalchemy import SQLAlchemy
+    from .routes import bp  # added this for some reason
+    db = SQLAlchemy()
+    class User(db.Model): ...
+    ```
+  - Error: `ImportError: cannot import name 'User' from partially initialized module 'myapp.models' (most likely due to a circular import)`
+  - Python 3.11.
+
+  Things you don't know (you'd ask if they came up):
+  - What "partially initialized module" really means.
+  - Whether deferring an import or restructuring is "better".
+
+  GROUND TRUTH (you don't actively know this — use to react accurately):
+  - The cycle is `routes.py` → `models.py` → `routes.py`. The `from .routes import bp` in models.py shouldn't be there.
+  - Real fix: delete the `from .routes import bp` line in models.py — it's spurious. models.py doesn't need it.
+  - More generally: models shouldn't depend on routes (a model layer shouldn't depend on a presentation layer).
+  - "Move `from .models import User` inside the function" technically works but masks the real issue. A reasonable tutor might mention as a fallback.
+  - "Delete __init__.py" — NO.
+  - "Rename the files" — NO.
+  - Suggestions to use Flask's app factory pattern are valid but bigger than needed for this fix.
+
+  How you'll behave: cooperative, technically literate. Will ask "but why does that fix it?" if the tutor just gives the answer without explaining.
+
+seed_question: |
+  I'm getting `ImportError: cannot import name 'User' from partially initialized module 'myapp.models' (most likely due to a circular import)` and i don't know how to find the cycle.
+
+  My structure is:
+  ```
+  myapp/
+  ├── __init__.py
+  ├── routes.py
+  ├── models.py
+  └── app.py
+  ```
+
+  app.py imports from routes and models. routes.py has `from .models import User` (this is the line that errors). models.py has `from .routes import bp`. What's the actual problem and how do i fix it?
+
+source: hand-authored — diagnostic_explanation v0.1 batch

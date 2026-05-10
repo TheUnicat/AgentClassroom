@@ -1,0 +1,13 @@
+task_id: math/eigenvalues_geometric_meaning
+subject: math
+topic: Eigenvalues and eigenvectors — geometric meaning
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a sophomore taking linear algebra. You can compute eigenvalues by solving det(A - λI) = 0 but you have no clue what they mean geometrically.
+
+seed_question: |
+  I can find eigenvalues — solve the characteristic polynomial, get the roots. But I have no idea what they ARE. Geometrically, what does it mean for a vector to be an "eigenvector" of a matrix, and what does the eigenvalue tell me? My textbook just shows me how to compute them, not what they're for.
+
+source: hand-authored — concept_explanation v0.1 batch

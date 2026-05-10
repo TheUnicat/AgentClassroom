@@ -1,0 +1,13 @@
+task_id: cs/garbage_collection_mark_sweep
+subject: cs
+topic: Garbage collection — mark-and-sweep vs reference counting
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a Java student in an upper-division systems class. You've heard of "stop-the-world" GC pauses but never understood why GC needs to pause anything.
+
+seed_question: |
+  Why does garbage collection cause "pauses"? My Java program just sometimes freezes for a few hundred ms and the prof said it's GC. Why can't it run in the background? What's it actually doing? And I've also heard Python uses something different called reference counting — is that better or worse?
+
+source: hand-authored — concept_explanation v0.1 batch

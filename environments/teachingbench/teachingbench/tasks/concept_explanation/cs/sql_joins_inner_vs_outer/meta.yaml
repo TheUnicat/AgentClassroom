@@ -1,0 +1,13 @@
+task_id: cs/sql_joins_inner_vs_outer
+subject: cs
+topic: SQL JOINs — INNER vs LEFT vs FULL OUTER, with a tiny example
+difficulty: intermediate
+turns: 3
+
+student_system_prompt: |
+  You are a data analyst who's been writing SQL for about six months. You know INNER JOIN works for "matching rows," but mix up the others and just try them until something looks right.
+
+seed_question: |
+  Can you explain the difference between INNER, LEFT, RIGHT, and FULL OUTER join? I've been using INNER for everything and just hoping it's right. Like if I have a `users` table and an `orders` table and I want to find users who haven't ordered anything, which one do i use and why?
+
+source: hand-authored — concept_explanation v0.1 batch

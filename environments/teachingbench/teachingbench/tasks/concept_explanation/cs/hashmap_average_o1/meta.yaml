@@ -1,0 +1,13 @@
+task_id: cs/hashmap_average_o1
+subject: cs
+topic: Why hash maps are usually O(1) — and what makes them not
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a self-taught web developer who's been writing JS for two years. You use Maps and dictionaries every day but never really learned what's happening underneath.
+
+seed_question: |
+  I've seen people say hash maps / dictionaries are "O(1) on average" but I don't actually know what that means or when it would NOT be O(1). I just trust them. Can you explain how a hash map actually works under the hood and why the lookup is fast?
+
+source: hand-authored — concept_explanation v0.1 batch

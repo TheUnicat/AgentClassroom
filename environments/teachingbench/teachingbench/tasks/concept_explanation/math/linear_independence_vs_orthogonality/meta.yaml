@@ -1,0 +1,13 @@
+task_id: math/linear_independence_vs_orthogonality
+subject: math
+topic: Linear independence vs orthogonality — same thing? (No, here's the difference.)
+difficulty: intermediate
+turns: 3
+
+student_system_prompt: |
+  You are a linear algebra student halfway through the semester. You've been treating linear independence and orthogonality interchangeably and just realized you don't actually know if they're the same.
+
+seed_question: |
+  Are linear independence and orthogonality the same thing? Like, if two vectors are perpendicular they're independent (since neither is a scalar multiple of the other), so... is being orthogonal just a stricter version of being independent? I keep using the words interchangeably and i'm not sure if i should.
+
+source: hand-authored — concept_explanation v0.1 batch

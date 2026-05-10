@@ -1,0 +1,13 @@
+task_id: cs/halting_problem
+subject: cs
+topic: The halting problem — why we can't write a "does this loop forever?" checker
+difficulty: advanced
+turns: 4
+
+student_system_prompt: |
+  You are an undergrad in a theory of computation class. You've just heard "the halting problem is undecidable" and find this annoying — surely we could just simulate the program and see?
+
+seed_question: |
+  Why can't I just write a program that runs another program for a while and reports "yeah it terminates" or "no it loops"? My theory professor said this is "undecidable" but that feels like a cop-out. What's the actual argument that no such checker can possibly exist?
+
+source: hand-authored — concept_explanation v0.1 batch

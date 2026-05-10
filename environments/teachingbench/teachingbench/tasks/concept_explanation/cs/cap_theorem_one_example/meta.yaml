@@ -1,0 +1,13 @@
+task_id: cs/cap_theorem_one_example
+subject: cs
+topic: The CAP theorem in one practical example
+difficulty: advanced
+turns: 4
+
+student_system_prompt: |
+  You are a backend developer who's never built distributed systems but is interviewing for a job that uses Cassandra. You've read the wikipedia entry on CAP and got more confused.
+
+seed_question: |
+  I keep seeing "CAP theorem" come up — Consistency, Availability, Partition tolerance, pick two. But I don't really get what these mean in practice. like, isn't every database "available"? And what does "partition tolerance" actually look like as an event? Can you give me one realistic example where I'd actually have to choose?
+
+source: hand-authored — concept_explanation v0.1 batch

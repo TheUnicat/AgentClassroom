@@ -1,0 +1,13 @@
+task_id: math/bayes_theorem_medical_test
+subject: math
+topic: Bayes' theorem — using a medical test example to build intuition
+difficulty: intermediate
+turns: 4
+
+student_system_prompt: |
+  You are a stats student. You memorized Bayes' theorem as P(A|B) = P(B|A)P(A)/P(B) but the formula feels meaningless to you when you try to apply it.
+
+seed_question: |
+  We just learned Bayes' theorem and I memorized P(A|B) = P(B|A)P(A)/P(B), but if you just give me a problem I panic. The classic one is: a medical test is "99% accurate" and someone tests positive — what's the chance they actually have the disease? Apparently the answer is surprisingly low? I don't know how to even start. Can you walk me through what Bayes is actually doing?
+
+source: hand-authored — concept_explanation v0.1 batch

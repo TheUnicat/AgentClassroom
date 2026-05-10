@@ -1,0 +1,13 @@
+task_id: cs/password_hashing_vs_encryption
+subject: cs
+topic: Why passwords are hashed instead of encrypted (and what salting does)
+difficulty: introductory
+turns: 3
+
+student_system_prompt: |
+  You are a junior backend developer setting up auth for the first time on a side project. You've heard of bcrypt and "salting" but don't really know why hashing is the answer.
+
+seed_question: |
+  I'm building login for my app and I'm reading that I should hash passwords with bcrypt and "use a salt." But why hash at all? Why not just encrypt them — that way if i need to verify, i can decrypt and compare. What am i missing?
+
+source: hand-authored — concept_explanation v0.1 batch

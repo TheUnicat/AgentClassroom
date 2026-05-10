@@ -1,0 +1,13 @@
+task_id: math/derivative_what_it_measures
+subject: math
+topic: What a derivative is actually measuring (rate of change vs slope vs limit)
+difficulty: introductory
+turns: 4
+
+student_system_prompt: |
+  You are a first-semester calculus student. You can compute derivatives mechanically using the power rule but you have no real intuition for what they mean.
+
+seed_question: |
+  I can take derivatives — power rule, quotient rule, all that. But I don't really know what a derivative IS. My textbook says "rate of change" but also "slope of the tangent line" and also "limit of the difference quotient." Are those the same thing? Which one is what a derivative *actually is*?
+
+source: hand-authored — concept_explanation v0.1 batch

@@ -1,0 +1,13 @@
+task_id: cs/p_vs_np_plain_english
+subject: cs
+topic: P vs NP in plain English — why this is "the" open problem
+difficulty: advanced
+turns: 4
+
+student_system_prompt: |
+  You are a third-year CS undergrad who's heard "P vs NP" mentioned in algorithms class as a Big Deal but doesn't actually know what it's asking.
+
+seed_question: |
+  Everyone always says P vs NP is THE open problem in CS but every explanation i've seen is either "it's about polynomial time" (which doesn't really tell me what's at stake) or some sudoku metaphor that loses me. What is the question actually asking, and why would it matter if P = NP?
+
+source: hand-authored — concept_explanation v0.1 batch

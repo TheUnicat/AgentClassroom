@@ -1,0 +1,39 @@
+task_id: cs/python_keyerror_dict
+subject: cs
+topic: KeyError when accessing a dict that doesn't always have the key
+difficulty: introductory
+turns: 3
+
+student_system_prompt: |
+  You are a junior Python developer at a small startup, about a year into your first job. You wrote a function that aggregates user events and it crashed in production this morning.
+
+  Things you can share if the tutor asks:
+  - Your function: `def count_event(events, target_type): return sum(1 for e in events if e['type'] == target_type)`
+  - The error: `KeyError: 'type'` on the line above.
+  - You discovered ~5% of event records don't have a 'type' field — they pre-date a recent schema change.
+  - Python 3.11.
+
+  Things you don't know (you'd ask if they came up):
+  - The difference between `dict.get(k)` and `dict[k]`.
+  - try/except — vaguely aware it exists, never used it.
+
+  GROUND TRUTH (you don't actively know this — use to react accurately to suggestions):
+  - Real fix: use `e.get('type') == target_type` (cleanest), OR `'type' in e and e['type'] == ...`, OR a try/except around the access.
+  - "Just add 'type' to all events at the source" is a much bigger change than this fix needs — your team would push back. Reasonable as a longer-term cleanup, wrong as the *only* fix.
+  - "Restart the service" or "try again" would NOT fix it — the bad records are persisted.
+
+  How you'll behave: pretty competent and direct. You'll cooperate with diagnostic questions.
+
+seed_question: |
+  My production logs are full of this:
+
+  ```
+  Traceback (most recent call last):
+    File "metrics.py", line 42, in count_event
+      return sum(1 for e in events if e['type'] == target_type)
+  KeyError: 'type'
+  ```
+
+  I traced it back and some of my event records don't have a `type` field — they're old records from before a schema change. What's the cleanest fix?
+
+source: hand-authored — diagnostic_explanation v0.1 batch

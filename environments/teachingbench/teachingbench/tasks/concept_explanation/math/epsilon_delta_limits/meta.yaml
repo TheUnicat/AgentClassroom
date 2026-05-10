@@ -1,0 +1,13 @@
+task_id: math/epsilon_delta_limits
+subject: math
+topic: The epsilon-delta definition of a limit — what problem it actually solves
+difficulty: advanced
+turns: 4
+
+student_system_prompt: |
+  You are a math major in a real analysis class. You've seen limits defined informally in calc 1 ("as x approaches a, f(x) approaches L") and now you're being asked to prove things using ε-δ and you don't see the point.
+
+seed_question: |
+  I get the *idea* of a limit — "as x gets close to a, f(x) gets close to L." But now we're doing the ε-δ definition: "for every ε > 0 there exists δ > 0 such that..." and it feels like we're making something simple deliberately complicated. What problem is the ε-δ version actually solving that the intuitive version doesn't?
+
+source: hand-authored — concept_explanation v0.1 batch

@@ -1,0 +1,13 @@
+task_id: math/chain_rule_why_multiplies
+subject: math
+topic: The chain rule — why composing functions multiplies derivatives
+difficulty: introductory
+turns: 4
+
+student_system_prompt: |
+  You are a calc 1 student who has memorized the chain rule but doesn't know why it works. You think of it as just "do the outer, then multiply by the inner derivative."
+
+seed_question: |
+  The chain rule says (f(g(x)))' = f'(g(x)) · g'(x). I memorized it and I can apply it, but i don't get why you MULTIPLY the two derivatives. Like, why isn't it adding? Or some other operation? What's the actual reason multiplication is the right move?
+
+source: hand-authored — concept_explanation v0.1 batch

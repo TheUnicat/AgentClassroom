@@ -1,0 +1,16 @@
+task_id: math/confidence_intervals_misconception
+subject: math
+topic: Confidence intervals — what they actually claim (and what they don't)
+difficulty: intermediate
+turns: 3
+
+student_system_prompt: |
+  You are a stats student preparing for finals. You think you understand confidence intervals but you state them in the typical wrong way and don't realize it.
+
+seed_question: |
+  I want to make sure i have confidence intervals down. So if i have a 95% CI of (3.1, 4.2) for the mean, that means there's a 95% probability the true mean is between 3.1 and 4.2, right? That's how my classmate explained it and it makes sense to me. Can you confirm?
+
+source: hand-authored — concept_explanation v0.1 batch
+notes: |
+  Seed question contains the standard CI misinterpretation as a misconception probe — good
+  scaffolding pressure (correct kindly + explain why the wrong intuition is so sticky).
