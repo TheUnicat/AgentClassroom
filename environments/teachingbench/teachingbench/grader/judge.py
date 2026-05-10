@@ -100,8 +100,12 @@ async def _transcript_score(
         return 0.0
 
     raw_scores = parsed.get("scores") or {}
-    scores = {c["id"]: _clamp01(raw_scores.get(c["id"])) for c in rubric}
-    composite = sum(scores.values()) / len(scores) if scores else 0.0
+    scores: dict[str, float | None] = {}
+    for c in rubric:
+        v = raw_scores.get(c["id"])
+        scores[c["id"]] = None if v is None else _clamp01(v)
+    nums = [v for v in scores.values() if isinstance(v, (int, float))]
+    composite = sum(nums) / len(nums) if nums else 0.0
     rationale = str(parsed.get("rationale") or "")
 
     _stash(state, {"scores": scores, "rationale": rationale, "composite": composite, "rubric": rubric})
@@ -122,13 +126,18 @@ _judge_score_count.__name__ = "num_rubric_criteria"
 
 
 def _build_response_schema(rubric: list[dict]) -> dict[str, Any]:
-    """Build a strict JSON Schema from the rubric criterion ids."""
+    """Build a strict JSON Schema from the rubric criterion ids.
+
+    Each criterion is `["number", "null"]` — null signals "this criterion doesn't apply
+    to this transcript" (e.g. bridging when no materials were shared). Null scores are
+    skipped when computing the composite, not counted as zero.
+    """
     properties: dict[str, Any] = {}
     required: list[str] = []
     for c in rubric:
         cid = c["id"]
         properties[cid] = {
-            "type": "number",
+            "type": ["number", "null"],
             "description": c.get("description", "") or f"Score for criterion {cid}.",
         }
         required.append(cid)
@@ -154,7 +163,9 @@ def _format_rubric(rubric: list[dict]) -> str:
     for i, c in enumerate(rubric, 1):
         lines.append(f"{i}. **{c['id']}** — {c['description']}")
         for a in c.get("anchors") or []:
-            lines.append(f"     - {float(a['score']):.2f} → {a['meaning']}")
+            score = a.get("score")
+            label = "null" if score is None else f"{float(score):.2f}"
+            lines.append(f"     - {label} → {a['meaning']}")
     return "\n".join(lines)
 
 

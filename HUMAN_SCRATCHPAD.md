@@ -13,4 +13,6 @@ what would grading look like for this? probably some human intervention required
 
 we should first build a version with same-model teacher and student (and judge if absolutely necessary) because adding a second model as student requires external API calls which is thorny on Prime intellect but idk if the judge model is a separate setting if it is use an independent judge model from teacher model (so they can be same or diff) if that doesn't make things more difficult to run besides changing one line for the judge model.
 
-potential problems with student model: it's not going to act like an actual, and will do firehosing and stuff. so we need to clamp down on this really hard in the system prompt–describing precisely how the student should behave, including short messages (hard cap at 50 words UNLESS it's like a made-up copy+paste of a python trace or something like that) with typos and stuff. 
+potential problems with student model: it's not going to act like an actual student, and will do firehosing and stuff. so we need to clamp down on this really hard in the system prompt–describing precisely how the student should behave, including short messages (hard cap at 50 words UNLESS it's like a made-up copy+paste of a python trace or something like that) with typos and stuff. 
+
+We should def create a UI for both testing and demo, using Vercel or some other free platform.

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "teachingbench"
 version = "0.1.0"
-description = "RL environment for evaluating how well an LLM teaches a concept off of a student's own course materials. Multi-turn, supports both LLM and human-in-the-loop students, scored by an LLM-generated quiz plus student self-rating."
+description = "RL environment for evaluating how well an LLM teaches a concept. Multi-turn dialog (1..N turns per task) between a tutor model and a simulated student, scored by an LLM judge against a structured per-criterion rubric. Supports tool calls (incl. stub image-gen) and per-task system prompt + rubric overrides."
 requires-python = ">=3.11"
 tags = [
     "teaching",

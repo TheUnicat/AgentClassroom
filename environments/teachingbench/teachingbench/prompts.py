@@ -145,16 +145,28 @@ DEFAULT_RUBRIC: list[dict] = [
         "description": (
             "Did the tutor build on the student's existing materials and stated context, rather "
             "than presenting a generic explainer? When the student has pasted slides, lecture "
-            "notes, or a textbook excerpt into the chat — or has stated their background, "
+            "notes, or a textbook excerpt into the chat — or has stated specific background, "
             "current confusion, or a specific symptom they're seeing — the tutor should "
             "reference those things, point at specific parts of them, contradict them where the "
             "materials are misleading, and use the student's own words / examples as the bridge "
             "to new ideas. A failure looks like the tutor delivering a textbook explanation that "
-            "ignores everything the student just shared. Note: if the task has no materials and "
-            "no student-stated context to bridge to, score 1.0 by default — there's nothing to "
-            "ignore."
+            "ignores everything the student just shared. **Return null** (not a number) **if the "
+            "student has not uploaded materials and has not shared specific context** — there's "
+            "nothing to bridge to, so this criterion doesn't apply and shouldn't pull the score "
+            "in either direction. A vague request like 'teach me Python from scratch' does NOT "
+            "count as bridgeable context; null applies. Pasting actual lecture slides, sharing "
+            "a specific error, or describing a specific symptom they're seeing DOES count; "
+            "score 0.0–1.0."
         ),
         "anchors": [
+            {
+                "score": None,
+                "meaning": (
+                    "The student has not uploaded any materials AND has not shared specific "
+                    "context (no specific confusion, no specific error, no specific background "
+                    "detail). Bridging is N/A — return null instead of a number."
+                ),
+            },
             {
                 "score": 1.0,
                 "meaning": (
@@ -251,9 +263,12 @@ Transcript:
 {transcript}
 </transcript>
 
-Return only a JSON object matching the provided schema. The reward is the mean of \
-the per-criterion scores. You may return any number in [0, 1] for each criterion — \
-the anchors are calibration points, not the only allowed values.\
+Return only a JSON object matching the provided schema. For each criterion, return \
+either a number in [0, 1] OR null (if the criterion doesn't apply to this transcript — \
+see each criterion's description for when null is appropriate). The reward is the mean \
+of the non-null per-criterion scores; null criteria are skipped, not counted as zero. \
+The anchors are calibration points, not the only allowed values — interpolate freely \
+between them.\
 """
 
 # --- Legacy prompts (quiz / self-rating). Kept for re-enabling later; not used by env_response. ---

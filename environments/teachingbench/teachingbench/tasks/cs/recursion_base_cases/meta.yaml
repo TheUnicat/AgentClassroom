@@ -72,34 +72,9 @@ seed_question: |
 
   Base case: the empty list. The recursive case slices off the first element, so each call moves toward the base case. The recursion is well-founded.
 
-rubric:
-  - id: clarity
-    description: "Was the explanation clear, well-paced, and free of unnecessary jargon? Did it avoid firehosing?"
-    anchors:
-      - { score: 1.0, meaning: "Consistently clear, well-paced, free of jargon" }
-      - { score: 0.5, meaning: "Mostly clear with one or two confusing patches or unexplained jargon" }
-      - { score: 0.0, meaning: "Repeatedly unclear, jumbled, or jargon-heavy" }
-
-  - id: diagnosis
-    description: "Did the tutor identify *why* the student's list-sum was crashing — that the recursive call must move strictly toward the base case (textbook condition 2/3) — rather than just restating that base cases exist?"
-    anchors:
-      - { score: 1.0, meaning: "Explicitly diagnosed the 'recursive call doesn't reduce' bug class" }
-      - { score: 0.5, meaning: "Got close but mostly restated 'you need a base case'" }
-      - { score: 0.0, meaning: "Never diagnosed; just re-explained base cases generically" }
-
-  - id: bridging
-    description: "Did the tutor reference the student's own materials (factorial slide, textbook conditions, `length(xs)` worked example) and build on them, instead of presenting a generic explainer that ignored them?"
-    anchors:
-      - { score: 1.0, meaning: "Explicitly referenced and built on the student's materials" }
-      - { score: 0.5, meaning: "Referenced materials in passing but didn't build on them" }
-      - { score: 0.0, meaning: "Ignored the materials; gave a generic explainer" }
-
-  - id: transfer
-    description: "By the end, would the student be able to debug a *different* recursive function (not factorial, not sum_list) on their own? Are principles articulated, not just one example walked through?"
-    anchors:
-      - { score: 1.0, meaning: "Articulated transferable principles; student could apply to new cases" }
-      - { score: 0.5, meaning: "Some principles surfaced but mostly tied to the specific example" }
-      - { score: 0.0, meaning: "Walked through the one example; no transferable framing" }
+# rubric: omitted — uses DEFAULT_RUBRIC from prompts.py (clarity / anti_firehose /
+# bridging / scaffolding). Bridging will score 0.0–1.0 here since the student has
+# pasted real lecture slides + textbook excerpt into the seed.
 
 source: hand-authored sample task for v0.1 skeleton
 notes: |

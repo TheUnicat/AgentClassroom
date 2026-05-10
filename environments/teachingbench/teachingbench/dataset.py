@@ -122,10 +122,14 @@ def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
         for j, a in enumerate(anchors):
             if not isinstance(a, dict):
                 raise ValueError(f"{where}: rubric[{cid}].anchors[{j}] must be a mapping")
-            try:
-                score = float(a.get("score"))
-            except (TypeError, ValueError):
-                raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].score must be a number")
+            raw_score = a.get("score")
+            if raw_score is None:
+                score = None  # null anchor — signals "criterion N/A in this situation"
+            else:
+                try:
+                    score = float(raw_score)
+                except (TypeError, ValueError):
+                    raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].score must be a number or null")
             meaning = str(a.get("meaning") or "").strip()
             if not meaning:
                 raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].meaning must be non-empty")

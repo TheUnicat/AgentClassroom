@@ -158,10 +158,13 @@ def _print_outputs(outputs: Any) -> None:
     if isinstance(breakdown, dict) and breakdown.get("scores"):
         print("\nPer-criterion scores:")
         for criterion, score in breakdown["scores"].items():
-            try:
-                print(f"  {criterion:22s} {float(score):.3f}")
-            except (TypeError, ValueError):
-                print(f"  {criterion:22s} {score!r}")
+            if score is None:
+                print(f"  {criterion:22s} null (N/A — skipped from composite)")
+            else:
+                try:
+                    print(f"  {criterion:22s} {float(score):.3f}")
+                except (TypeError, ValueError):
+                    print(f"  {criterion:22s} {score!r}")
         rationale = (breakdown.get("rationale") or "").strip()
         if rationale:
             print(f"\nJudge rationale: {rationale}")
