@@ -51,10 +51,10 @@ Examples of good student replies:
 """
 
 DEFAULT_RUBRIC: list[dict] = [
-    # ---------- Content (35% total: 10 + 15 + 10) ----------
+    # ---------- Content (35% total: 12 + 13 + 10) ----------
     {
         "id": "answers_the_question",
-        "weight": 0.10,
+        "weight": 0.12,
         "description": (
             "Did the tutor actually answer the student's question? The student arrived with a "
             "specific ask — an explanation, a hint, a check on their work, a roadmap. The tutor "
@@ -72,28 +72,28 @@ DEFAULT_RUBRIC: list[dict] = [
     },
     {
         "id": "factual_correctness",
-        "weight": 0.15,
+        "weight": 0.13,
         "description": (
             "Are the tutor's technical claims correct, AND does the overall picture they paint "
             "avoid being misleading? Two distinct failure modes to keep separate when scoring: "
             "(a) **Blatant misinformation** — confidently asserting wrong things. Wrong "
             "definitions, hallucinated theorems / papers / documentation references, broken "
             "proofs presented as valid, code that doesn't do what the tutor claims, made-up "
-            "facts. The student will internalize false claims. Score near 0. "
+            "facts. The student will internalize false claims. Score at or near 0. "
             "(b) **Misleading without strictly lying** — every individual claim could be "
             "defended as technically accurate, but the overall impression conveyed is wrong. "
             "Oversimplification presented as the full picture (without flagging it as a "
             "simplification), omitted critical caveats or conditions, framing that nudges the "
             "student toward a wrong inference, or a true-but-unrepresentative example used to "
-            "make a general point. Score around 0.3. "
+            "make a general point. Score around 0.3."
             "Honest hedging when uncertain (\"I'm not 100% sure but…\") is fine and does not "
             "penalize. Flagging an oversimplification (\"this is a simplification — the full "
-            "story involves...\") moves a borderline case from misleading (0.3) toward "
-            "correct-with-minor-issue (0.5)."
+            "story involves...\") is not penalized, either. Not flagging an oversimplification would be "
+            "correct-with-minor-issue (0.75)."
         ),
         "anchors": [
             {"score": 1.0, "meaning": "All technical claims are correct. Any uncertainty is acknowledged when present."},
-            {"score": 0.5, "meaning": "Mostly correct, with a non-load-bearing minor error or an oversimplification that the tutor explicitly flags as such — small enough that it doesn't materially mislead the student."},
+            {"score": 0.75, "meaning": "Mostly correct, with a non-load-bearing minor error or an oversimplification — small enough that it doesn't materially mislead the student."},
             {"score": 0.3, "meaning": "Misleading without strictly lying. Every individual claim could be defended as technically true, but the impression the student walks away with is wrong: critical caveats omitted, oversimplification presented as the full picture without flagging, slanted framing, or an unrepresentative example used to make a general point."},
             {"score": 0.0, "meaning": "Blatant misinformation. Wrong definitions stated confidently, hallucinated theorem / paper / documentation references, broken proofs presented as valid, code that doesn't do what the tutor claims, made-up facts. The student will internalize false claims."},
         ],
@@ -118,7 +118,7 @@ DEFAULT_RUBRIC: list[dict] = [
         ],
     },
 
-    # ---------- Presentation / Teaching (50% total: 25 + 20 + 5) ----------
+    # ---------- Presentation / Teaching (50% total: 20 + 20 + 10) ----------
     {
         "id": "anti_firehose",
         "weight": 0.20,
@@ -136,8 +136,8 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Tight throughout. One concept per message, conversational length, no unprompted tangents, no preview-of-next-lesson endings. The tutor reacts to what the student specifically said."},
-            {"score": 0.6, "meaning": "Mostly tight but with one notable firehose pattern: an over-long response, an unprompted tangent, or a sectioned/bulleted message where prose would have served better."},
-            {"score": 0.3, "meaning": "Listicle/sectioned response in the first message OR consistently >100 words per message OR enumerates many options when one was needed. Anchor here for any of these patterns."},
+            {"score": 0.6, "meaning": "Mostly tight but with one notable firehose pattern: an over-long response, an unprompted tangent, or one or two sectioned/bulleted message where prose would have served better."},
+            {"score": 0.3, "meaning": "Inappropriate listicle/sectioned response in several messages OR consistently >120 words per message without clear reason OR often enumerates many options when one was needed. Anchor here for any of these patterns."},
             {"score": 0.0, "meaning": "Pervasive firehose: multiple messages are wall-of-text dumps with structured lists, alternative approaches, tangents, preview-of-next-lesson. Reads like a textbook chapter, not a chat."},
         ],
     },
@@ -153,13 +153,15 @@ DEFAULT_RUBRIC: list[dict] = [
             "citing theorems above their level repeatedly, especially after the student said they "
             "don't follow; (b) too elementary — re-explaining things the student demonstrated they "
             "know, treating an expert as a beginner. Also includes following the student's "
-            "redirects (\"i don't need version A, just show me B\")."
+            "redirects (\"i don't need version A, just show me B\"). "
+            "Tip: checking to see if the student was confused can help with grading here. "
+            "Tip: Think about what the student's knowledge of the subject could be based on their messages"
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Consistently pitches at the student's stated/demonstrated level. Uses analogies appropriate to their background. Doesn't waste time on things they already know. Respects redirects."},
             {"score": 0.6, "meaning": "Starts at the wrong level (too advanced or too elementary) but adjusts within one or two messages after student feedback."},
-            {"score": 0.3, "meaning": "Inconsistent calibration throughout — alternates between over- and under-explanation."},
-            {"score": 0.0, "meaning": "Cites concepts above the student's stated level *repeatedly*, even after the student said they don't understand; explains advanced things using more advanced things. Or: ignores explicit redirects and continues at the wrong level."},
+            {"score": 0.3, "meaning": "Inconsistent calibration throughout — frequently over- or under-explains."},
+            {"score": 0.0, "meaning": "Cites concepts above the student's stated level *repeatedly*, even after the student said they don't understand (or the converse); explains advanced things using more advanced things. Or: ignores explicit redirects and continues at the wrong level."},
         ],
     },
     {
@@ -195,10 +197,11 @@ DEFAULT_RUBRIC: list[dict] = [
             "being too terse for the specific thing being explained, such that the student has "
             "to back-fill steps the tutor skipped. Note: clarity is about *writing*, not about "
             "*level* (which is meeting_student_level) or *length* (which is anti_firehose)."
+            "Tip: checking to see if the student was confused can help with grading here"
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Clean, readable. Each explanation builds smoothly — no unexplained leaps, no tangled sentences, jargon introduced before use."},
-            {"score": 0.5, "meaning": "One or two confusing passages: a logical jump, a sentence that requires re-reading, a term used before being introduced."},
+            {"score": 0.5, "meaning": "One or two confusing passages: a large logical jump, a few sentences that requires re-reading, more than one term used before being introduced."},
             {"score": 0.0, "meaning": "Repeatedly hard to follow. Tangled sentences, frequent logical leaps, jargon used as if already defined, or so terse that the student has to fill in missing steps."},
         ],
     },
