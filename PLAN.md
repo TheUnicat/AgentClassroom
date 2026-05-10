@@ -193,10 +193,33 @@ Run on a friend at a lab:
 
 ---
 
+## Reliability testing (separate from Phase 4 baselines)
+
+Two distinct kinds of variance to measure — both with their own scripts:
+
+### A. Judge reliability — same judge, same transcript, repeated
+
+Replay an existing saved rollout's transcript through the judge LLM N times. Captures **judge-only noise**: how much the same judge model disagrees with itself on the exact same input. If this is high, judge prompt / rubric needs tightening (anchored examples, lower temperature, stricter rubric language).
+
+- Script: `environments/teachingbench/teachingbench/reliability_check.py`
+- CLI: `python -m teachingbench.reliability_check <run_id> --n 8 [--judge-model ...]`
+- Reports per-criterion: `n_scored / n`, `min`, `max`, `range`, `median`, `mean`, `stdev`, `CV`. Same for composite.
+
+### B. Inter-trial rollout reliability — same task, multiple fresh rollouts
+
+Run the FULL pipeline N times for the same task (different student/tutor seeds). Captures **total system noise** (student behavior + tutor temperature + judge variance). Slower / more expensive.
+
+- Script: TBD (not yet written; tracked under "Open follow-ups").
+
+The judge reliability test is the cheap one to run first — if the JUDGE alone is unreliable, no amount of tutor-side stability fixes the noise floor.
+
+---
+
 ## Notes on what's still open
 
 These don't block Phase 3 but should get answers before Phase 4:
 
+- **Inter-trial rollout reliability script.** B above. Need before any baseline numbers in D3 are believable.
 - **Per-task `turns` defaults.** What's a good default for math vs CS topics? Some concepts are 1-turn ("explain factorial"); some need 4–6 turns of back-and-forth. Phase 4 authoring will calibrate per-topic.
 - **Per-task rubric authoring.** First sample task has a custom rubric (clarity / diagnosis / bridging / transfer). Decide whether subjects share a common rubric template or each task gets its own — probably "shared default + per-task overrides where the failure mode is specific."
 - **Quiz / self-rating re-enable trigger.** Re-enable when transcript-judge baselines saturate or look noisy. Until then, code stays in repo unused.

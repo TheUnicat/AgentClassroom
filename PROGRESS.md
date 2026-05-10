@@ -146,8 +146,25 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 - [ ] Each task: optional materials/, seed_question.md, meta.yaml with `turns` and difficulty, optional `rubric.md` (else default rubric)
 - [ ] Per-task `turns` calibrated (1-turn for "explain X" prompts; 4–6 for back-and-forth concepts)
 
-### Reliability check (per HUMAN_SCRATCHPAD.md, BEFORE running headline baselines)
-- [ ] Write a script that reruns each task N times with fixed seeds, reports per-task reward variance
+### Reliability checks (BEFORE running headline baselines)
+
+Two kinds — both needed before Phase 4 numbers are trustworthy.
+
+**A) Judge reliability — same judge replays same transcript N times**
+- [x] `grader/judge.py` refactored to expose public `judge_transcript()` helper (pure async function, no state mutation)
+- [x] `environments/teachingbench/teachingbench/reliability_check.py` — argparse CLI, parallel `asyncio.gather` of N judge calls
+- [x] CLI: `python -m teachingbench.reliability_check <run_id> --n 8 [--judge-model ...]`
+- [x] Reports per-criterion + composite: `n_scored/n`, `min`, `max`, `range`, `median`, `mean`, `stdev`, `CV`
+- [x] **First run, 2026-05-10:** `gpt-5.4-nano` judge (temp 0.2), n=8, on `20260510T143355Z__cs__intro_python_hello_world` (reward 0.867, current default rubric). Composite CV=0.039 (very stable). All scored criteria CV ≤ 0.062. `bridging` null on 8/8 trials (perfect agreement on the N/A call). Composite range: 0.767–0.850. Original saved reward of 0.867 was at the high end → single-shot scores carry ~±0.04 noise even at low CV.
+- [x] **Second run, 2026-05-10:** same judge config, n=8, on `20260509T164146Z__cs__intro_python_hello_world` (reward 0.625, OLD per-task rubric: diagnosis/anti_firehose/skill_appropriate/scaffolding). Composite CV=0.100 (acceptable) but per-criterion variance is bimodal:
+  - `diagnosis` and `skill_appropriate` saturate (CV=0.000): judge nails them on every trial.
+  - `anti_firehose` is **wildly noisy** (CV=0.307, range 0.5–1.0). Judge can't decide if the same transcript was firehosing or not.
+  - `scaffolding` is medium-noisy (CV=0.197, range 0.5–0.8).
+  - Original saved score 0.625 was at the LOW end of the new distribution (mean 0.706, range 0.625–0.800). Confirms single-shot scores under-report as easily as over-report.
+  - **Takeaway:** the composite looks fine but masks per-criterion problems. `anti_firehose` is the rubric criterion most in need of tightened anchors / concrete length thresholds. Subjective/spectrum criteria are noisier than objective/yes-no criteria.
+
+**B) Inter-trial rollout reliability — same task, multiple full rollouts**
+- [ ] Script that reruns each task N times (fresh tutor + student LLM each time), reports per-task reward variance
 - [ ] Define a variance threshold above which a task is considered too noisy to use
 - [ ] Tighten rubric or task content for any task that exceeds the threshold
 

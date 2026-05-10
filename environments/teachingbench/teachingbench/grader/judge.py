@@ -46,32 +46,35 @@ class TeachingRubric(vf.JudgeRubric):
         self.add_metric(_judge_score_count)
 
 
-async def _transcript_score(
+async def judge_transcript(
     judge_client: AsyncOpenAI,
     judge_model: str,
-    judge_sampling_args: dict[str, Any],
-    prompt: Any,
-    completion: Any,
-    state: Any,
-    info: Any,
-    **_: Any,
-) -> float:
-    info_dict = _info_dict(info)
-    rubric = info_dict.get("rubric")
-    if not isinstance(rubric, list) or not rubric:
-        rubric = DEFAULT_RUBRIC
+    *,
+    rubric: list[dict[str, Any]],
+    materials: str,
+    topic: str,
+    transcript: str,
+    sampling_args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the LLM judge ONCE on a rendered transcript.
 
-    materials = info_dict.get("materials", "")
-    topic = info_dict.get("topic", "")
-    transcript = _render_transcript(prompt, completion)
-    rubric_text = _format_rubric(rubric)
+    Returns `{scores, rationale, composite, rubric, error?}`. `scores` is a dict
+    keyed by criterion id — values are floats in [0, 1] or `None` (for criteria
+    the judge marked N/A). `composite` is the mean of non-null scores.
 
+    Used by both the env's `_transcript_score` reward function and the
+    judge-reliability test in `teachingbench.reliability_check`. Pure function:
+    no state mutation.
+    """
     judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
-        topic=topic, materials=materials, rubric_text=rubric_text, transcript=transcript
+        topic=topic,
+        materials=materials,
+        rubric_text=_format_rubric(rubric),
+        transcript=transcript,
     )
     schema = _build_response_schema(rubric)
 
-    args = dict(judge_sampling_args or {})
+    args = dict(sampling_args or {})
     if "max_tokens" in args:
         args["max_completion_tokens"] = args.pop("max_tokens")
     args = {k: v for k, v in args.items() if v is not None}
@@ -89,15 +92,13 @@ async def _transcript_score(
         raw = resp.choices[0].message.content or ""
     except Exception as e:
         logger.warning("Transcript judge call failed: %s", e)
-        _stash(state, {"scores": {}, "rationale": f"judge_error: {e}", "composite": 0.0, "rubric": rubric})
-        return 0.0
+        return {"scores": {}, "rationale": f"judge_error: {e}", "composite": 0.0, "rubric": rubric, "error": str(e)}
 
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
         logger.warning("Judge returned non-JSON despite strict mode: %s — raw=%r", e, raw[:200])
-        _stash(state, {"scores": {}, "rationale": "parse_error", "composite": 0.0, "rubric": rubric})
-        return 0.0
+        return {"scores": {}, "rationale": "parse_error", "composite": 0.0, "rubric": rubric, "error": "parse_error"}
 
     raw_scores = parsed.get("scores") or {}
     scores: dict[str, float | None] = {}
@@ -108,8 +109,35 @@ async def _transcript_score(
     composite = sum(nums) / len(nums) if nums else 0.0
     rationale = str(parsed.get("rationale") or "")
 
-    _stash(state, {"scores": scores, "rationale": rationale, "composite": composite, "rubric": rubric})
-    return composite
+    return {"scores": scores, "rationale": rationale, "composite": composite, "rubric": rubric}
+
+
+async def _transcript_score(
+    judge_client: AsyncOpenAI,
+    judge_model: str,
+    judge_sampling_args: dict[str, Any],
+    prompt: Any,
+    completion: Any,
+    state: Any,
+    info: Any,
+    **_: Any,
+) -> float:
+    info_dict = _info_dict(info)
+    rubric = info_dict.get("rubric")
+    if not isinstance(rubric, list) or not rubric:
+        rubric = DEFAULT_RUBRIC
+
+    breakdown = await judge_transcript(
+        judge_client,
+        judge_model,
+        rubric=rubric,
+        materials=info_dict.get("materials", ""),
+        topic=info_dict.get("topic", ""),
+        transcript=_render_transcript(prompt, completion),
+        sampling_args=judge_sampling_args,
+    )
+    _stash(state, breakdown)
+    return float(breakdown.get("composite", 0.0))
 
 
 async def _judge_score_count(state: Any, **_: Any) -> float:

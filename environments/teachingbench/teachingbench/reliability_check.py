@@ -1,0 +1,315 @@
+"""Judge reliability check.
+
+Replays an existing saved rollout's transcript through the judge LLM N times,
+in parallel, and reports per-criterion + composite statistics. Useful for
+distinguishing JUDGE noise from full-pipeline noise: if the same judge gives
+wildly different scores to the exact same transcript, the rubric / prompt /
+sampling needs tightening before any baseline numbers in D3 are trustworthy.
+
+Usage:
+    python -m teachingbench.reliability_check <run_id> [--n 8] [--judge-model gpt-5.4-nano]
+
+Where <run_id> is either:
+    - a directory name under environments/teachingbench/outputs/runs/  (e.g.
+      `20260510T143518Z__cs__intro_python_hello_world__gpt-5.4-nano`), or
+    - an absolute / relative path to a results.jsonl file or its parent dir.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import statistics
+from pathlib import Path
+from typing import Any
+
+from openai import AsyncOpenAI
+
+from teachingbench.grader.judge import judge_transcript
+from teachingbench.prompts import DEFAULT_RUBRIC
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_RUNS_ROOT = REPO_ROOT / "environments" / "teachingbench" / "outputs" / "runs"
+
+
+# --------------------------------------------------------------------------
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("run", help="Run directory name OR path to results.jsonl OR path to its parent dir.")
+    p.add_argument("--n", type=int, default=8, help="Number of judge replays. Default: 8.")
+    p.add_argument(
+        "--judge-model",
+        default=os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4-nano"),
+        help="Judge model (defaults to $DEFAULT_JUDGE_MODEL or gpt-5.4-nano).",
+    )
+    p.add_argument(
+        "--temperature",
+        type=float,
+        default=0.2,
+        help="Judge sampling temperature. Default: 0.2 (matches TeachingRubric default).",
+    )
+    p.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="Env var to read the OpenAI API key from.",
+    )
+    p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL override.")
+    p.add_argument(
+        "--save",
+        default=None,
+        help="Optional path to write the per-trial scores as JSON (one record per trial).",
+    )
+    return p.parse_args()
+
+
+# --------------------------------------------------------------------------
+
+
+def resolve_results_path(arg: str) -> Path:
+    """Accept either a bare run-id, a path to results.jsonl, or a path to a run dir."""
+    p = Path(arg)
+    if p.is_file() and p.name == "results.jsonl":
+        return p
+    if p.is_dir() and (p / "results.jsonl").is_file():
+        return p / "results.jsonl"
+    # bare run-id
+    candidate = DEFAULT_RUNS_ROOT / arg / "results.jsonl"
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(f"Could not locate results.jsonl from arg {arg!r}")
+
+
+def load_rollout(results_path: Path) -> dict[str, Any]:
+    """Read the (single) rollout record from results.jsonl, parse `info`, render transcript."""
+    with results_path.open() as f:
+        line = f.readline()
+    if not line:
+        raise ValueError(f"{results_path} is empty")
+    rec = json.loads(line)
+
+    info = rec.get("info") or {}
+    if isinstance(info, str):
+        try:
+            info = json.loads(info)
+        except json.JSONDecodeError:
+            info = {}
+
+    rubric = info.get("rubric")
+    if not isinstance(rubric, list) or not rubric:
+        rubric = DEFAULT_RUBRIC
+
+    msgs: list[dict[str, Any]] = []
+    for source in (rec.get("prompt") or []), (rec.get("completion") or []):
+        for m in source:
+            role = m.get("role") if isinstance(m, dict) else getattr(m, "role", "")
+            content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
+            if isinstance(content, list):
+                content = "\n".join(
+                    p.get("text", "") if isinstance(p, dict) else str(getattr(p, "text", p)) for p in content
+                )
+            msgs.append({"role": str(role), "content": str(content or "")})
+
+    transcript = _render_transcript(msgs)
+    return {
+        "task_id": info.get("task_id"),
+        "topic": info.get("topic", ""),
+        "materials": info.get("materials", ""),
+        "rubric": rubric,
+        "transcript": transcript,
+        "original_reward": rec.get("reward"),
+    }
+
+
+def _render_transcript(msgs: list[dict[str, Any]]) -> str:
+    """Same rendering as grader.judge._render_transcript (kept local to avoid private import)."""
+    lines: list[str] = []
+    for m in msgs:
+        role = m.get("role", "")
+        if role == "system":
+            continue
+        content = m.get("content", "")
+        if role == "tool":
+            lines.append(f"[Tool result]: {content}")
+            continue
+        speaker = "Tutor" if role == "assistant" else "Student"
+        if content:
+            lines.append(f"{speaker}: {content}")
+    return "\n\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+
+
+async def run_trials(
+    rollout: dict[str, Any], *, n: int, judge_client: AsyncOpenAI, judge_model: str, temperature: float
+) -> list[dict[str, Any]]:
+    """Run `n` independent judge calls in parallel against the same transcript."""
+    print(f"Running {n} judge trials in parallel against {judge_model}…")
+    tasks = [
+        judge_transcript(
+            judge_client,
+            judge_model,
+            rubric=rollout["rubric"],
+            materials=rollout["materials"],
+            topic=rollout["topic"],
+            transcript=rollout["transcript"],
+            sampling_args={"temperature": temperature},
+        )
+        for _ in range(n)
+    ]
+    results = await asyncio.gather(*tasks)
+    return results
+
+
+# --------------------------------------------------------------------------
+
+
+def stats_for(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {}
+    out = {
+        "min": min(values),
+        "max": max(values),
+        "range": max(values) - min(values),
+        "median": statistics.median(values),
+        "mean": statistics.fmean(values),
+    }
+    if len(values) >= 2:
+        sd = statistics.stdev(values)
+        out["stdev"] = sd
+        out["cv"] = sd / out["mean"] if out["mean"] > 0 else 0.0
+    else:
+        out["stdev"] = 0.0
+        out["cv"] = 0.0
+    return out
+
+
+def print_table(rollout: dict[str, Any], trials: list[dict[str, Any]], n: int) -> None:
+    rubric = rollout["rubric"]
+    criterion_ids = [c["id"] for c in rubric]
+    composites = [t["composite"] for t in trials if "composite" in t]
+
+    # Per-criterion stats
+    print()
+    print(f"=== Judge reliability — n={n} ===")
+    print(f"Task:     {rollout['task_id']}")
+    print(f"Topic:    {rollout['topic']}")
+    print(f"Original reward (from saved rollout): {rollout.get('original_reward'):.3f}" if isinstance(rollout.get("original_reward"), (int, float)) else "Original reward: (n/a)")
+    print()
+
+    cols = [
+        ("criterion", 16),
+        ("scored", 8),
+        ("min", 7),
+        ("max", 7),
+        ("range", 7),
+        ("median", 7),
+        ("mean", 7),
+        ("stdev", 7),
+        ("CV", 7),
+    ]
+    header = "  ".join(label.ljust(w) for label, w in cols)
+    sep = "  ".join("-" * w for _, w in cols)
+    print(header)
+    print(sep)
+
+    for cid in criterion_ids:
+        per_trial = [t["scores"].get(cid) for t in trials]
+        nums = [v for v in per_trial if isinstance(v, (int, float))]
+        n_scored = len(nums)
+        if not nums:
+            row = [cid, f"0/{n}", "—", "—", "—", "—", "—", "—", "—"]
+        else:
+            s = stats_for(nums)
+            row = [
+                cid,
+                f"{n_scored}/{n}",
+                f"{s['min']:.3f}",
+                f"{s['max']:.3f}",
+                f"{s['range']:.3f}",
+                f"{s['median']:.3f}",
+                f"{s['mean']:.3f}",
+                f"{s['stdev']:.3f}",
+                f"{s['cv']:.3f}",
+            ]
+        print("  ".join(str(cell).ljust(w) for cell, (_, w) in zip(row, cols)))
+
+    # Composite
+    print(sep)
+    if composites:
+        s = stats_for(composites)
+        row = [
+            "composite",
+            f"{len(composites)}/{n}",
+            f"{s['min']:.3f}",
+            f"{s['max']:.3f}",
+            f"{s['range']:.3f}",
+            f"{s['median']:.3f}",
+            f"{s['mean']:.3f}",
+            f"{s['stdev']:.3f}",
+            f"{s['cv']:.3f}",
+        ]
+        print("  ".join(str(cell).ljust(w) for cell, (_, w) in zip(row, cols)))
+
+    # Sanity: errors
+    errs = [t.get("error") for t in trials if t.get("error")]
+    if errs:
+        print()
+        print(f"WARNING: {len(errs)}/{n} trials reported errors.")
+        for i, e in enumerate(errs):
+            print(f"  trial {i}: {e}")
+
+    print()
+    print("Interpretation:")
+    print("  CV (coefficient of variation = stdev/mean) is the main reliability dial.")
+    print("  CV < 0.05  → very stable judge.")
+    print("  CV 0.05..0.15 → acceptable for relative ranking; treat absolute values cautiously.")
+    print("  CV > 0.15  → judge is noisy; tighten rubric anchors / lower temperature / try a different model.")
+
+
+# --------------------------------------------------------------------------
+
+
+async def main() -> None:
+    args = parse_args()
+    api_key = os.environ.get(args.api_key_env)
+    if not api_key:
+        raise SystemExit(f"${args.api_key_env} is not set")
+
+    results_path = resolve_results_path(args.run)
+    print(f"Loading rollout from: {results_path}")
+    rollout = load_rollout(results_path)
+    print(f"Task: {rollout['task_id']}  Topic: {rollout['topic']}  "
+          f"Rubric: {[c['id'] for c in rollout['rubric']]}  "
+          f"Transcript chars: {len(rollout['transcript'])}")
+
+    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    if args.base_url:
+        client_kwargs["base_url"] = args.base_url
+    judge_client = AsyncOpenAI(**client_kwargs)
+
+    trials = await run_trials(
+        rollout,
+        n=args.n,
+        judge_client=judge_client,
+        judge_model=args.judge_model,
+        temperature=args.temperature,
+    )
+
+    print_table(rollout, trials, args.n)
+
+    if args.save:
+        out_path = Path(args.save)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w") as f:
+            for t in trials:
+                f.write(json.dumps(t) + "\n")
+        print(f"\nPer-trial scores written to: {out_path}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
