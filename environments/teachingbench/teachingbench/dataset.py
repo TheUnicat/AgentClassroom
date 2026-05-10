@@ -9,10 +9,15 @@ Per-task fields supported in `meta.yaml`:
 - `fixed_student_messages: list[str]` (optional) — pinned student messages for
   turns 2..N+1 (turn 1 is always `seed_question.md`). Shorter list ⇒ extra turns
   fall through to the student LLM.
+- `materials: list` (optional) — references into the shared `_materials/` library.
+  Each entry is either a string (just the path, relative to tasks/ root) or a
+  dict with `path:` and optional `description:`. Text files (.md/.txt) get inlined
+  into the materials text blob; PDFs/images become media references for v0.2
+  multimodal wiring (the text blob gets a `[Attached: ...]` stub for v0.1).
 
 Files in the task dir:
 - `seed_question.md` (required) — turn 1's student message
-- `materials/*.md` (optional) — concatenated into a single materials blob
+- `materials/*.md` (optional, legacy) — concatenated into the materials blob
 - `rubric.md` (optional) — the judging rubric; falls back to a default
 """
 
@@ -50,11 +55,41 @@ def load_task(task_dir: Path) -> dict[str, Any]:
             raise ValueError(f"{task_dir}: needs a `seed_question` in meta.yaml or a seed_question.md file")
         seed_question = seed_path.read_text().strip()
 
-    materials_dir = task_dir / "materials"
     materials_chunks: list[str] = []
+    materials_media: list[dict] = []
+
+    # Legacy path: local materials/*.md inlined into the task
+    materials_dir = task_dir / "materials"
     if materials_dir.is_dir():
         for path in sorted(materials_dir.glob("*.md")):
             materials_chunks.append(f"## {path.stem}\n\n{path.read_text().strip()}")
+
+    # New path: meta.yaml `materials:` field references into the shared library
+    for raw in (meta.get("materials") or []):
+        ref_path, desc = _parse_material_ref(raw, where=str(task_dir / "meta.yaml"))
+        full = (TASKS_ROOT / ref_path).resolve()
+        if not full.is_file():
+            raise ValueError(
+                f"{task_dir}/meta.yaml: referenced material not found: {ref_path}"
+            )
+        ext = full.suffix.lower()
+        if ext in (".md", ".txt"):
+            content = full.read_text().strip()
+            label = desc or full.stem
+            materials_chunks.append(f"## {label}\n\n{content}")
+        elif ext in (".pdf", ".png", ".jpg", ".jpeg", ".webp"):
+            mtype = "pdf" if ext == ".pdf" else "image"
+            materials_media.append({"path": str(full), "type": mtype, "description": desc})
+            stub = f"[Attached: {full.name}"
+            if desc:
+                stub += f" — {desc.strip()}"
+            stub += "]"
+            materials_chunks.append(stub)
+        else:
+            raise ValueError(
+                f"{task_dir}/meta.yaml: unsupported material extension {ext!r} for {ref_path}"
+            )
+
     materials = "\n\n---\n\n".join(materials_chunks)
 
     # rubric: structured list of criteria. Default fallback is DEFAULT_RUBRIC.
@@ -94,11 +129,27 @@ def load_task(task_dir: Path) -> dict[str, Any]:
         "turns": int(meta.get("turns", 4)),
         "seed_question": seed_question,
         "materials": materials,
+        "materials_media": materials_media,
         "rubric": rubric,
         "tutor_system_prompt": tutor_prompt,
         "student_system_prompt": student_prompt,
         "fixed_student_followups": [str(m) for m in fixed_followups],
     }
+
+
+def _parse_material_ref(raw, *, where: str) -> tuple[str, str | None]:
+    """Accept either 'path/to/file' or {'path': '...', 'description': '...'}."""
+    if isinstance(raw, str):
+        return raw.strip(), None
+    if isinstance(raw, dict):
+        path = raw.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError(f"{where}: materials entry missing 'path'")
+        desc = raw.get("description")
+        if desc is not None and not isinstance(desc, str):
+            raise ValueError(f"{where}: materials entry 'description' must be a string")
+        return path.strip(), (desc.strip() if desc else None)
+    raise ValueError(f"{where}: materials entry must be a string or a mapping")
 
 
 def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
@@ -169,6 +220,7 @@ def build_dataset(task_filter: str | None = None, root: Path | None = None) -> D
                         "difficulty": loaded["difficulty"],
                         "turns": loaded["turns"],
                         "materials": loaded["materials"],
+                        "materials_media": loaded["materials_media"],
                         "rubric": loaded["rubric"],
                         "tutor_system_prompt": loaded["tutor_system_prompt"],
                         "student_system_prompt": loaded["student_system_prompt"],

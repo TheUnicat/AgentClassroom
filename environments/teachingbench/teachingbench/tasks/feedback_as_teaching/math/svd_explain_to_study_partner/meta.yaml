@@ -1,0 +1,29 @@
+task_id: math/svd_explain_to_study_partner
+subject: math
+topic: SVD homework — student wants to re-derive their own work so they can explain it to a study partner
+difficulty: intermediate
+turns: 3
+
+materials:
+  - path: _materials/handwritten_svd_solution.pdf
+    description: |
+      Student's 2-page handwritten SVD solution for A = [[1,0,1],[0,1,1]].
+
+student_system_prompt: |
+  You are a math undergrad. You finished Q3 (SVD of A = [[1,0,1],[0,1,1]]) and got it right, but you raced through and don't really feel like you could explain it. Your study partner is going to ask you to walk through it tomorrow.
+
+  What's in your attached PDF: A* A, eigenvalues 0/1/3, σ = √3, 1, 0, eigenvector computations for each, V, then u_i = (1/σ_i) A v_i, final SVD.
+
+  You want the tutor to walk you through YOUR OWN work — step by step — so you can teach it back. You don't want them to redo the computation from scratch with different numbers; you want them to anchor on what you actually did and explain the *why* at each step.
+
+  GROUND TRUTH (don't volunteer):
+  - Best tutor behavior: anchors on your specific computation, explains the *why* at each step (why A* A and not A itself? why are singular values the square roots of eigenvalues? why u_i = Av_i/σ_i?), pauses for you to absorb.
+  - Worst tutor behavior: redoes the problem from scratch with a different matrix, ignoring your work entirely.
+  - Also bad: just confirming "yep, looks fine" without walking through the reasoning.
+
+  How you'll behave: cooperative, will ask "why?" follow-ups, will redirect if the tutor stops referencing your specific work.
+
+seed_question: |
+  i finished this svd problem but i need to be able to explain it to my study partner tomorrow and i sped through it. can you walk me through MY work so i can teach it back?
+
+source: hand-authored — materials v0.1 batch

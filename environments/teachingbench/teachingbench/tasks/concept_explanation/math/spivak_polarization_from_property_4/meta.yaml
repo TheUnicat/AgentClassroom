@@ -1,0 +1,26 @@
+task_id: math/spivak_polarization_from_property_4
+subject: math
+topic: Spivak Theorem 1-2(5) — student doesn't see how the polarization identity follows from property (4)
+difficulty: advanced
+turns: 3
+
+materials:
+  - path: _materials/spivak_calculus_on_manifolds_ch1.pdf
+    description: |
+      Spivak Chapter 1 (Calculus on Manifolds) — includes Theorem 1-2 on inner product properties (symmetry, bilinearity, positive definiteness, |x| = √⟨x,x⟩, polarization identity).
+
+student_system_prompt: |
+  You are reading Spivak. Theorem 1-2(5) is the polarization identity: ⟨x,y⟩ = (|x+y|² − |x−y|²)/4. Spivak's proof says it follows from property (4), which is |x| = √⟨x,x⟩. You don't see how (4) alone gets you the polarization identity — Spivak's algebra in the proof skips steps.
+
+  GROUND TRUTH (don't volunteer):
+  - Strategy: use (4) backwards — |·|² is just ⟨·,·⟩. So |x+y|² = ⟨x+y, x+y⟩. Expand using bilinearity (property 2) and symmetry (property 1): ⟨x+y, x+y⟩ = ⟨x,x⟩ + 2⟨x,y⟩ + ⟨y,y⟩. Similarly |x−y|² = ⟨x,x⟩ − 2⟨x,y⟩ + ⟨y,y⟩. Subtract: |x+y|² − |x−y|² = 4⟨x,y⟩. Divide by 4.
+  - Property (4) is the bridge that lets you swap |·|² for ⟨·,·⟩.
+  - Best tutor: walks through the |x+y|² and |x−y|² expansions step by step, names where bilinearity and symmetry are used, shows the cross-term cancellation.
+  - Worst tutor: just states the identity is "true" without showing the expansion.
+
+  How you'll behave: wants to SEE the algebra, not just be told it works.
+
+seed_question: |
+  in spivak's proof of theorem 1-2(5) (the polarization identity), he says it follows from (4) — which is just |x| = √⟨x,x⟩. but i don't see how to GET to ⟨x,y⟩ = (|x+y|² - |x-y|²)/4 from there. can you show me the algebra he skipped?
+
+source: hand-authored — materials v0.1 batch

@@ -1,0 +1,29 @@
+task_id: math/mat157_problem6_two_methods
+subject: math
+topic: MAT 157 problem 6 — fundamental lemma of calc of variations, student wants only the FTC version
+difficulty: advanced
+turns: 3
+
+materials:
+  - path: _materials/mat157_week16_problemset.pdf
+    description: |
+      MAT 157 Week 16. Problem 6 is the fundamental lemma of calc of variations — asks to prove the result two ways (upper/lower sums, and FTC).
+
+student_system_prompt: |
+  You are a MAT 157 student. Problem 6 asks:
+    "Suppose f is continuous on [a,b] and ∫_c^d f = 0 for every subinterval [c,d] ⊂ [a,b]. Prove f(x) = 0 for all x ∈ [a,b], in two ways: (a) using the definition of the integral (by upper and lower sums); (b) using the Fundamental Theorem of Calculus."
+
+  You did (a) (the Riemann sum version) on your own and want to see (b) — the FTC version. You don't want a re-derivation of (a).
+
+  GROUND TRUTH (don't volunteer):
+  - The FTC version is short: define F(x) = ∫_a^x f(t) dt. The hypothesis says F(d) − F(c) = 0 for every [c,d] ⊂ [a,b], so F is constant. By FTC, F'(x) = f(x). The derivative of a constant is 0, so f(x) = 0.
+  - That's the entire proof in ~3 lines.
+  - Best tutor: gives the FTC version directly since the student asked for it. Doesn't pad it out, doesn't re-explain (a), doesn't bring in extra machinery.
+  - Bad tutor: starts re-deriving (a) "for context" or explaining how the two methods compare.
+
+  How you'll behave: focused, knows what they want, will redirect ("i don't need the Riemann sum version, just the FTC one") if the tutor wanders.
+
+seed_question: |
+  problem 6 wants me to prove f=0 in two ways. i got (a) (the Riemann sum version) myself but i want to see (b) — the FTC version. can you just show me (b)?
+
+source: hand-authored — materials v0.1 batch

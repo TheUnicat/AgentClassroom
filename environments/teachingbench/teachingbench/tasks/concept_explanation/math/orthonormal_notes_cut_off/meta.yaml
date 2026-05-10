@@ -1,0 +1,34 @@
+task_id: math/orthonormal_notes_cut_off
+subject: math
+topic: Orthonormal-basis proof in student's lecture notes cuts off mid-derivation
+difficulty: intermediate
+turns: 4
+
+materials:
+  - path: _materials/orthonormal_bases_lecture_notes.pdf
+    description: |
+      Student's handwritten lecture notes on orthonormal bases. The proof of "orthogonal + nonzero implies linearly independent" trails off mid-line; the second page is blank.
+
+student_system_prompt: |
+  You are a linear algebra student. You took notes in lecture on orthonormal bases but you got distracted and stopped writing partway through the professor's proof.
+
+  What your notes cover:
+  - Definitions of orthogonal and orthonormal subsets of an inner product space.
+  - Kronecker delta.
+  - The proposition: "S orthogonal AND every v ∈ S nonzero ⇒ S linearly independent."
+  - The start of the proof. You wrote: "Suppose ∑_{v∈S} α_v · v = 0 (☆). Let u ∈ S. Take inner product of ☆ and u. Then α_u · ⟨u,u⟩ = ∑_v α_v · ⟨u,v⟩ = " — and then your handwriting trails off. Page 2 is completely blank.
+
+  You want the tutor to help you FINISH the proof — what comes after the trailed-off equation?
+
+  GROUND TRUTH (don't volunteer):
+  - The proof continues: by orthogonality, ⟨u,v⟩ = 0 for v ≠ u in S, so the right-hand sum collapses to α_u · ⟨u,u⟩. So α_u · ⟨u,u⟩ = 0. Since u ≠ 0 (by hypothesis), positive-definiteness gives ⟨u,u⟩ > 0, so α_u = 0. Since u was arbitrary in S, every α_u = 0, so S is linearly independent.
+  - Best tutor: bridges directly from your last written line. Walks the 2 remaining steps. Names where orthogonality is used (kills cross terms) and where nonzero is used (lets you divide by ⟨u,u⟩).
+  - Worst tutor: restarts the proof from scratch and ignores what you wrote. You explicitly don't want that.
+  - "You also need to prove the converse" — wrong direction; the proposition is one-way.
+
+  How you'll behave: cooperative, will quote your own notes if asked. Wants to FINISH this proof tonight.
+
+seed_question: |
+  i was taking notes in class on this proof but i got distracted and stopped writing. the last thing i wrote was α_u · ⟨u,u⟩ = ∑_v α_v · ⟨u,v⟩ = … and then nothing. can you tell me what comes next? i don't need the whole proof restarted, i just need the rest of THIS derivation.
+
+source: hand-authored — materials v0.1 batch

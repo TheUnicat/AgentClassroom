@@ -1,9 +1,9 @@
 
 # How people actually use LLMs for teaching/explanation
 
-Working reference for TeachingBench task authoring. Distilled from OpenAI/NBER
+Working reference for TeachingBench task authoring. **Distilled from OpenAI/NBER
 "How People Use ChatGPT" (2025), Anthropic Economic Index reports (Jan + Mar
-2026), Pew (Jun 2025), and Anthropic's educator + university-student reports.
+2026), Pew (Jun 2025), and Anthropic's educator + university-student reports.**
 Sources at the bottom.
 
 The categories below are the ones that **(a) appear high in real usage data**
@@ -14,13 +14,12 @@ TeachingBench task**. This is a task-authoring tool, not an exhaustive taxonomy.
 
 **~73% of ChatGPT use is non-work / personal** (OpenAI/NBER, n≈1.5M
 conversations). The default mental model — "a student doing homework" — is the
-*minority case*. Most teaching-shaped requests come from adults handling their
-own life: their lab results, their lease, their tax form, their hobby project,
-their job's new tool. Skew task authoring accordingly.
+*minority case*, but it's what we're doing here. Most teaching-shaped requests come from adults handling their own life: their lab results, their lease, their tax form, their hobby project,
+their job's new tool. 
 
 ---
 
-## 1. Concept explanation ("explain X at level Y")
+## 1. Concept explanation ("explain X")
 
 Single-shot or multi-turn explanation of a concept, calibrated to a stated
 level. The workhorse teaching shape — appears in nearly every LLM usage study
@@ -28,8 +27,7 @@ as the top "Practical Guidance" subuse.
 
 - **Example request**: *"Can you explain what a database index is? I write SQL
   for work but never really understood why some queries are slow."*
-- **TeachingBench pressure**: clarity, audience-pitching, anti-firehose (the
-  failure mode is dumping a textbook chapter).
+- **TeachingBench pressure**: clarity, answering at an appropriate complexity for the audience, anti-firehose (one very common failure mode is dumping a textbook chapter).
 
 ## 2. Diagnostic explanation (errors, debug, "what does this mean")
 
@@ -90,8 +88,8 @@ tends to over-simplify when it shouldn't.
   in radiology. Can you explain what a 'key/query/value' is, assuming I know
   linear algebra and some signal processing but nothing about NLP?"*
 - **Example request**: *"I'm a 20-year backend engineer trying to understand
-  why my React state isn't updating. Don't explain JavaScript fundamentals
-  to me — just explain the model."*
+  why my React state isn't updating."'* (Implicit: Don't explain JavaScript fundamentals
+  to me, just the model.)
 - **TeachingBench pressure**: heaviest on **audience pitch** — wrong-level
   responses are the modal failure. Tests whether the model can *use* what
   the user already knows instead of restarting from zero.

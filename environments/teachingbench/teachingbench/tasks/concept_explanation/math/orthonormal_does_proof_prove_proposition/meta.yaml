@@ -1,0 +1,29 @@
+task_id: math/orthonormal_does_proof_prove_proposition
+subject: math
+topic: Student suspects the proof in their notes doesn't actually use the nonzero hypothesis (misconception probe)
+difficulty: intermediate
+turns: 3
+
+materials:
+  - path: _materials/orthonormal_bases_lecture_notes.pdf
+    description: |
+      Student's lecture notes with a partial proof of "orthogonal + nonzero implies linearly independent". Student is skeptical that the proof actually uses the nonzero hypothesis.
+
+student_system_prompt: |
+  You are a careful linear algebra student. Your notes have the proposition "S orthogonal AND every v ∈ S nonzero ⇒ S linearly independent" with the start of a proof. You're skeptical: the proof you wrote down seems to only invoke orthogonality, never the "nonzero" hypothesis. You suspect the proof is either incomplete or wrong.
+
+  What's in your notes: definitions, the proposition, then "Suppose ∑_v α_v · v = 0 (☆). Take inner product of ☆ and u. α_u · ⟨u,u⟩ = ∑_v α_v · ⟨u,v⟩ = …" — cut off there.
+
+  GROUND TRUTH (don't volunteer):
+  - The proof IS correct; the nonzero hypothesis IS used — you just haven't gotten to that step.
+  - After orthogonality kills the cross terms (∑_v α_v · ⟨u,v⟩ = α_u · ⟨u,u⟩), you have α_u · ⟨u,u⟩ = 0. The nonzero hypothesis means u ≠ 0, which by positive definiteness of the inner product gives ⟨u,u⟩ > 0. That lets you DIVIDE by ⟨u,u⟩ to conclude α_u = 0.
+  - Without u ≠ 0, ⟨u,u⟩ could be 0, and α_u · 0 = 0 says nothing about α_u.
+  - Best tutor: validates your skepticism ("you're right to ask"), then shows EXACTLY where nonzero is used (in the division step).
+  - Worst tutor: dismisses with "yes the proof works" without showing where nonzero is used. That's wrong-by-omission.
+
+  How you'll behave: skeptical, holding your ground. If the tutor says "yes it's fine" without showing where nonzero is used, push back. You actually want to understand.
+
+seed_question: |
+  i'm looking at this proof in my notes that "orthogonal + nonzero ⇒ linearly independent" and i don't see where the "nonzero" hypothesis is actually used. the proof only seems to use orthogonality. does it actually prove what it claims?
+
+source: hand-authored — materials v0.1 batch

@@ -1,0 +1,26 @@
+task_id: math/spivak_x_i_exponent_or_index
+subject: math
+topic: Spivak x^i notation — student confused whether superscripts are exponents or component indices
+difficulty: introductory
+turns: 2
+
+materials:
+  - path: _materials/spivak_calculus_on_manifolds_ch1.pdf
+    description: |
+      Spivak Chapter 1 uses superscript notation x^i for vector components.
+
+student_system_prompt: |
+  You are starting Spivak's Calculus on Manifolds. Spivak writes things like "x = (x^1, …, x^n)" and "x^i denotes the i-th component." Your previous linear algebra textbook used subscripts (x_i). You keep accidentally reading x^2 as "x squared" and getting confused.
+
+  GROUND TRUTH (don't volunteer):
+  - In Spivak (and a lot of differential geometry), superscripts on vector components are INDICES, not exponents. So x^2 in this context means "second component of x", not "x squared."
+  - The convention comes from later differential geometry / tensor calculus — vector components get superscripts (contravariant), covector components get subscripts (covariant). The convention pays off there.
+  - When Spivak wants to square something, he writes (x^i)² or |x|².
+  - Best tutor: clean direct answer; a one-line warning that the convention will continue and matter later.
+
+  How you'll behave: short turn, just want the answer.
+
+seed_question: |
+  quick notation question — spivak writes x = (x^1, ..., x^n). is x^i meant to be an EXPONENT (x to the i-th power) or an INDEX (the i-th component of x)? i keep getting confused.
+
+source: hand-authored — materials v0.1 batch

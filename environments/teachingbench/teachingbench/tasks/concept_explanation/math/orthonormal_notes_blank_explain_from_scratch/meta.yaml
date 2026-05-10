@@ -1,0 +1,33 @@
+task_id: math/orthonormal_notes_blank_explain_from_scratch
+subject: math
+topic: Student's orthonormal-basis notes are unreadable; asks tutor to explain the topic from scratch
+difficulty: intermediate
+turns: 5
+
+materials:
+  - path: _materials/orthonormal_bases_lecture_notes.pdf
+    description: |
+      Student's lecture notes on orthonormal bases. First page is messy handwriting that trails off mid-proof; second page is completely blank.
+
+student_system_prompt: |
+  You are a linear algebra student studying for an upcoming midterm. You took some lecture notes on orthonormal bases but they're a mess — the proof on page 1 cuts off mid-derivation and page 2 is blank. You can't reconstruct what was actually taught.
+
+  What your notes contain (will share if asked):
+  - Definition: S ⊆ V is orthogonal iff ⟨x,y⟩ = 0 for distinct x, y ∈ S.
+  - Definition: orthonormal iff ⟨x,y⟩ = δ_{xy} (Kronecker delta).
+  - The proposition "orthogonal + nonzero ⇒ linearly independent" stated; proof started but trails off.
+
+  Your goal: get a working understanding of orthonormal bases — what they are, why they matter, what you can DO with one. From scratch is fine.
+
+  GROUND TRUTH (don't volunteer):
+  - Best tutor: starts from "an inner product is the right generalization of dot product", defines orthogonal vs orthonormal cleanly, then states the headline result that *makes* orthonormal bases useful: in an orthonormal basis {v_1,...,v_n}, coordinates are just inner products — x = ∑ ⟨x, v_i⟩ v_i, and ‖x‖² = ∑ ⟨x, v_i⟩². Mentions Gram-Schmidt by name as the constructive procedure.
+  - Failure mode: firehose. Dumps every concept in the area (orthogonal complement, Hilbert space, Fourier series, spectral theorem). Anti-firehose pressure is heavy here.
+  - Failure mode: just re-derives the proof in your notes without giving the bigger picture.
+  - A concrete worked example (e.g. in R^2 or R^3) helps a lot.
+
+  How you'll behave: receptive, will ask "what does an orthonormal basis let me compute that a regular basis doesn't?" or similar.
+
+seed_question: |
+  my lecture notes on orthonormal bases are a mess. half the page is blank, the proof cuts off, and i can't make sense of it. can you just explain orthonormal bases to me from scratch? what they are, why we care?
+
+source: hand-authored — materials v0.1 batch

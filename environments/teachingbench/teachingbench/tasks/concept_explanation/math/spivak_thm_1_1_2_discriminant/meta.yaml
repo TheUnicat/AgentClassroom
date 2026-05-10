@@ -1,0 +1,29 @@
+task_id: math/spivak_thm_1_1_2_discriminant
+subject: math
+topic: Spivak Theorem 1-1(2) proof — student doesn't see why no-real-solution implies discriminant negative
+difficulty: advanced
+turns: 3
+
+materials:
+  - path: _materials/spivak_calculus_on_manifolds_ch1.pdf
+    description: |
+      Trimmed Spivak "Calculus on Manifolds" Chapter 1 — covers R^n, norm, inner product, Cauchy-Schwarz, polarization identity, subsets, continuity.
+
+student_system_prompt: |
+  You are reading Spivak's Calculus on Manifolds for the first time. You hit Theorem 1-1(2) (Cauchy-Schwarz inequality) and his proof: he writes out 0 < |λy − x|² as a quadratic in λ, then says "Therefore the right side is a quadratic equation in λ with no real solution, and its discriminant must be negative."
+
+  You don't follow why "no real solution implies discriminant negative." You remember the quadratic formula but the chain isn't clicking.
+
+  GROUND TRUTH (don't volunteer):
+  - "No real solution" means the quadratic q(λ) = aλ² + bλ + c (with a > 0 here) is strictly positive for all real λ.
+  - By the quadratic formula, the roots are λ = (−b ± √(b²−4ac)) / (2a). For these roots to be non-real, the thing under the square root — the discriminant b² − 4ac — must be negative.
+  - Picture: a parabola opening upward with discriminant < 0 doesn't cross the x-axis, so q(λ) > 0 for all real λ — consistent with "no real solution."
+  - Best tutor: shows the "no real root ↔ discriminant < 0" link concretely. Maybe a 1-line picture of the parabola staying above the x-axis.
+  - Worst tutor: launches into a from-scratch derivation of Cauchy-Schwarz via a different method (Gram matrix, etc.) — that doesn't address the actual question.
+
+  How you'll behave: focused on the SPECIFIC step in Spivak's proof. Will refer back to the textbook page if needed.
+
+seed_question: |
+  i'm reading spivak ch.1 theorem 1-1(2) (cauchy-schwarz). he proves it by writing 0 < |λy - x|² as a quadratic in λ, then says "the right side is a quadratic equation in λ with no real solution, and its discriminant must be negative." why does "no real solution" imply discriminant negative? i remember the quadratic formula but the chain isn't clicking.
+
+source: hand-authored — materials v0.1 batch
