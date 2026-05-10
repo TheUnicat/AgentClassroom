@@ -121,19 +121,20 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 ## Phase 3 — Push v0.1.0 to Prime Intellect (D2 complete)
 
 ### Polish before push
-- [ ] Convert `env_response` / `_finalize` / `setup_state` to return typed `vf.UserMessage` / `vf.ToolMessage` instead of raw dicts (silences verifiers `normalize_messages` perf warnings; functional already)
-- [ ] Add a quick test of `cs/intro_python_hello_world` task with `--task cs/intro_python_hello_world --live` (verify the new task runs)
+- [x] Updated stale references — `pyproject.toml` description, env-level `README.md`, dry-run "Rubric" label all now reflect the transcript-judge reward design
+- [x] Verified live runs on both sample tasks (`intro_python_hello_world` + `recursion_base_cases`) under structured-rubric + null-bridging
+- [ ] _Optional polish (non-blocking):_ convert `env_response` / `_finalize` / `setup_state` to typed `vf.UserMessage` / `vf.ToolMessage` to silence verifiers `normalize_messages` perf warnings
 
-### Local wheel verification
-- [ ] `pip wheel environments/teachingbench --no-deps -w /tmp/wheel_test` succeeds
-- [ ] `unzip -l /tmp/wheel_test/teachingbench-0.1.0-py3-none-any.whl` shows tasks/ data files included
-- [ ] `pip install --force-reinstall /tmp/wheel_test/...whl` succeeds
-- [ ] `cd /tmp && python -m teachingbench.smoke_test` runs (no source-tree dependency)
+### Local wheel verification (DONE 2026-05-10)
+- [x] `pip wheel environments/teachingbench --no-deps -w /tmp/teachingbench_wheel` succeeds (32 KB wheel)
+- [x] `unzip -l` confirms tasks/ data files included (both `meta.yaml` files + recursion `materials/*.md`)
+- [x] `pip install --force-reinstall /tmp/teachingbench_wheel/teachingbench-0.1.0-py3-none-any.whl` succeeds
+- [x] `cd /tmp && python -m teachingbench.smoke_test` runs cleanly — no source-tree dependency
 
-### Push
+### Push (USER STEP — needs `prime` auth)
 - [ ] `prime env push --path environments/teachingbench` exits clean
 - [ ] **Metadata test confirmed passing on Prime dashboard** (CLI exit-success NOT sufficient)
-- [ ] v0.1.0 visible on Prime with one runnable task
+- [ ] v0.1.0 visible on Prime with both sample tasks runnable
 - [ ] `prime eval run` skipped (needs billing; smoke test covers local dev)
 
 ---

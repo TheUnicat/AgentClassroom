@@ -118,7 +118,12 @@ async def dry_run(args: argparse.Namespace) -> None:
         print(f"Difficulty: {info['difficulty']}")
         print(f"Turns:   {info.get('turns')}")
         print(f"Materials length: {len(info['materials'])} chars")
-        print(f"Rubric length:    {len(info.get('rubric', ''))} chars")
+        rubric = info.get("rubric") or []
+        rubric_label = (
+            f"{len(rubric)} criteria ({', '.join(c.get('id', '?') for c in rubric)})"
+            if isinstance(rubric, list) else f"{len(rubric)} chars (legacy prose form)"
+        )
+        print(f"Rubric:           {rubric_label}")
         print(f"Tutor system prompt:   {len(info.get('tutor_system_prompt', ''))} chars")
         print(f"Student system prompt: {len(info.get('student_system_prompt', ''))} chars")
         print(f"Fixed student followups: {len(info.get('fixed_student_followups', []))}")
