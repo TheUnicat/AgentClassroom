@@ -8,13 +8,13 @@ Source: `TEACHING_ENV_KICKOFF.md`. Decisions resolved at kickoff alignment are r
 
 These are what we ship. Everything in this plan ladders up to one of them.
 
-| # | Deliverable | Lands in Phase |
-|---|---|---|
-| **D1** | **One-page pitch** — what env measures, why current models fail, why it matters commercially | Phase 5 |
-| **D2** | **Runnable repo** — one-command setup, README, sample task, sample rollout, sample grader output | Phases 1–3 |
-| **D3** | **Baseline report** — ≥3 models, 30–100 rollouts, pass@1/k or mean reward, failure taxonomy, 2–3 example traces | Phase 4 |
-| **D4** | **Data/rubric card** — public vs held-out, what reward measures, hack surfaces, caveats | Phase 5 |
-| **D5** | **Demo artifact** — live dashboard or short Loom showing the model failing and the grader catching it | Phase 5 |
+| #      | Deliverable                                                                                                     | Lands in Phase |
+| ------ | --------------------------------------------------------------------------------------------------------------- | -------------- |
+| **D1** | **One-page pitch** — what env measures, why current models fail, why it matters commercially                    | Phase 5        |
+| **D2** | **Runnable repo** — one-command setup, README, sample task, sample rollout, sample grader output                | Phases 1–3     |
+| **D3** | **Baseline report** — ≥3 models, 30–100 rollouts, pass@1/k or mean reward, failure taxonomy, 2–3 example traces | Phase 4        |
+| **D4** | **Data/rubric card** — public vs held-out, what reward measures, hack surfaces, caveats                         | Phase 5        |
+| **D5** | **Demo artifact** — live dashboard or short Loom showing the model failing and the grader catching it           | Phase 5        |
 
 Pitch line: **failure-frontier framing**, not "we built an eval." Audience: friends at labs and data companies.
 
@@ -138,9 +138,44 @@ Lead with the failure-frontier line. Concrete failure mode → trace as evidence
 
 Use prose + concrete examples, not rigid structured fields.
 
-### D5 — Demo artifact
-- Format TBD — possibly both. Dashboard reference: <https://meeting-intent-dashboard.vercel.app/>.
-- Must show: a tutor transcript that scored low + the materials it was teaching off + the per-task rubric + the judge's per-criterion sub-scores + the rationale.
+### D5 — Demo artifact: web dashboard
+
+**Decision (2026-05-10):** ship a dashboard (not just a Loom). Single page, two halves:
+
+- **Left half:** task selector → rubric viewer → past-runs list → "Run fresh" button.
+- **Right half:** chat / transcript view → per-criterion score breakdown + judge rationale.
+
+Switching tasks updates the rubric pane. Selecting a past run loads its transcript + scores into the right half. Clicking "Run fresh" kicks off a new rollout against the selected task and streams the transcript back live.
+
+**Stack (split deploy):**
+
+```
+dashboard/
+├── frontend/   # Next.js 15 (App Router) + Tailwind + shadcn/ui  →  Cloudflare Pages
+└── backend/    # FastAPI wrapping teachingbench.load_environment().evaluate(...)  →  HF Spaces (CPU, free)
+```
+
+Frontend talks to backend via HTTPS + SSE for live transcript streaming. Cloudflare Pages doesn't run Python (Pages Functions are JS/TS only), hence the split.
+
+**API key handling:** server-side OpenAI key on the HF Space, no auth, security-through-obscurity is acceptable for v0.1 (low-balance OpenAI account, low public exposure). Revisit if the demo URL gets shared widely — the realistic next step is per-IP rate limiting or BYOK.
+
+**Backend endpoints (FastAPI):**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/tasks` | List tasks: `task_id`, `subject`, `topic`, `difficulty`, `turns`, `rubric` (with anchors) |
+| `GET` | `/api/runs` | List saved rollouts (id, task_id, model, timestamp, composite reward) |
+| `GET` | `/api/runs/{id}` | Full saved rollout: transcript, per-criterion scores, judge rationale |
+| `POST` | `/api/run` | Trigger fresh rollout. SSE stream emits `{type: "message", role, content}` chunks; final event is `{type: "done", reward, scores, rationale}` |
+
+**Past rollouts source:** read directly from the existing `environments/teachingbench/outputs/runs/<timestamp>__<task>__<model>/results.jsonl` files. Backend mounts that directory at startup; new rollouts append. (HF Spaces persistent disk handles this; `git`-ignored so they don't bloat the repo.)
+
+**Frontend tech:** Next.js 15 App Router + Tailwind + shadcn/ui. Single route `/`. Components: `<TaskSelector>`, `<RubricView>`, `<RunsList>`, `<ChatView>`, `<ScorePanel>`. `lib/api.ts` for the client; SSE consumed via `EventSource` or `fetch` + `ReadableStream`.
+
+**Acceptance:**
+- Frontend deployed to a Cloudflare Pages URL.
+- Backend deployed to an HF Space; `/api/tasks` returns the two sample tasks; `/api/runs` returns the saved rollouts; `/api/run` streams a fresh rollout end-to-end.
+- Friend at a lab can open the URL, click around, run a fresh rollout, and see the per-criterion breakdown — all without us walking them through anything.
 
 **Acceptance:** D1, D4, D5 done.
 

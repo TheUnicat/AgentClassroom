@@ -186,9 +186,39 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 - [ ] Caveats listed (multi-turn but bounded; markdown-only; small N; image-gen stubbed)
 - [ ] **D4 done**
 
-### D5 — Demo artifact
-- [ ] Format chosen — dashboard, Loom, or both
-- [ ] Shows: low-scoring tutor response + materials + failed quiz + grader catching the failure
+### D5 — Demo artifact: web dashboard
+
+> Decision 2026-05-10: ship a dashboard. Split deploy — frontend on Cloudflare Pages (Next.js), backend on HF Spaces (FastAPI). Single page, two halves: task picker + rubric on the left, chat + scores on the right. Server-side OpenAI key, no auth, security-through-obscurity.
+
+#### Backend (FastAPI on HF Spaces)
+- [ ] `dashboard/backend/app.py` — FastAPI app
+- [ ] `GET /api/tasks` — lists tasks with full rubric (id, description, anchors)
+- [ ] `GET /api/runs` — lists saved rollouts (id, task, model, timestamp, composite reward)
+- [ ] `GET /api/runs/{id}` — full rollout: transcript, per-criterion scores, rationale
+- [ ] `POST /api/run` — SSE stream of fresh rollout (turn-by-turn messages, then final scores)
+- [ ] `dashboard/backend/requirements.txt` — fastapi, uvicorn, sse-starlette, openai, datasets, pyyaml, verifiers, teachingbench (editable / wheel)
+- [ ] `dashboard/backend/Dockerfile` (or HF `app.py` convention) — for HF Space build
+- [ ] CORS configured for the Cloudflare Pages domain
+- [ ] OpenAI key read from `OPENAI_API_KEY` env var (HF Space secret)
+- [ ] Saved-runs source: reads from `environments/teachingbench/outputs/runs/` (mounted or copied at deploy)
+- [ ] `dashboard/backend/README.md` — local-dev + HF Space deploy steps
+
+#### Frontend (Next.js 15 App Router on Cloudflare Pages)
+- [ ] `dashboard/frontend/` — Next.js 15 + Tailwind + shadcn/ui scaffold
+- [ ] Single page `app/page.tsx` with 50/50 left-right layout
+- [ ] Left half: `<TaskSelector>` → `<RubricView>` → `<RunsList>` → "Run fresh" button
+- [ ] Right half: `<ChatView>` (transcript) → `<ScorePanel>` (per-criterion + rationale)
+- [ ] `lib/api.ts` — typed client for backend endpoints
+- [ ] SSE consumer for `/api/run` (`EventSource` or `fetch` + `ReadableStream`)
+- [ ] `NEXT_PUBLIC_BACKEND_URL` env var pointing at the HF Space
+- [ ] `dashboard/frontend/README.md` — local-dev + Cloudflare Pages deploy steps
+
+#### Acceptance
+- [ ] Backend running locally on `:8000`, all 4 endpoints respond
+- [ ] Frontend running locally on `:3000`, can browse + run rollouts via local backend
+- [ ] Backend deployed to an HF Space (URL noted)
+- [ ] Frontend deployed to a Cloudflare Pages URL (URL noted)
+- [ ] **End-to-end test:** open the Cloudflare URL, click intro_python, click "Run fresh," see transcript stream, see scores at the end
 - [ ] **D5 done**
 
 ---

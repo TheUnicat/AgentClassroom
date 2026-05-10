@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.vscode/
+.DS_Store
+node_modules/
+dashboard/frontend/node_modules/
+dashboard/frontend/.next/
+environments/teachingbench/outputs/
+environments/teachingbench/.cache/
