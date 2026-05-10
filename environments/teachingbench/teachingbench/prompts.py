@@ -74,17 +74,28 @@ DEFAULT_RUBRIC: list[dict] = [
         "id": "factual_correctness",
         "weight": 0.15,
         "description": (
-            "Are the tutor's technical claims correct? Things to check: definitions are right, "
-            "proofs and derivations don't have load-bearing errors, references to theorems/papers/"
-            "documentation aren't hallucinated, code (if any) actually does what it claims to do. "
-            "Distinguish load-bearing errors (would mislead the student) from cosmetic ones (a "
-            "typo, an oversimplification the tutor flags as such). Honest hedging when uncertain "
-            "(\"I'm not 100% sure but…\") is fine; confidently asserting wrong things is not."
+            "Are the tutor's technical claims correct, AND does the overall picture they paint "
+            "avoid being misleading? Two distinct failure modes to keep separate when scoring: "
+            "(a) **Blatant misinformation** — confidently asserting wrong things. Wrong "
+            "definitions, hallucinated theorems / papers / documentation references, broken "
+            "proofs presented as valid, code that doesn't do what the tutor claims, made-up "
+            "facts. The student will internalize false claims. Score near 0. "
+            "(b) **Misleading without strictly lying** — every individual claim could be "
+            "defended as technically accurate, but the overall impression conveyed is wrong. "
+            "Oversimplification presented as the full picture (without flagging it as a "
+            "simplification), omitted critical caveats or conditions, framing that nudges the "
+            "student toward a wrong inference, or a true-but-unrepresentative example used to "
+            "make a general point. Score around 0.3. "
+            "Honest hedging when uncertain (\"I'm not 100% sure but…\") is fine and does not "
+            "penalize. Flagging an oversimplification (\"this is a simplification — the full "
+            "story involves...\") moves a borderline case from misleading (0.3) toward "
+            "correct-with-minor-issue (0.5)."
         ),
         "anchors": [
-            {"score": 1.0, "meaning": "All technical claims are correct. Any uncertainty is acknowledged."},
-            {"score": 0.5, "meaning": "Mostly correct, but contains a non-load-bearing error or an oversimplification that's not flagged."},
-            {"score": 0.0, "meaning": "Contains a load-bearing factual error: a wrong definition, a broken proof step, a hallucinated reference, or code that doesn't work."},
+            {"score": 1.0, "meaning": "All technical claims are correct. Any uncertainty is acknowledged when present."},
+            {"score": 0.5, "meaning": "Mostly correct, with a non-load-bearing minor error or an oversimplification that the tutor explicitly flags as such — small enough that it doesn't materially mislead the student."},
+            {"score": 0.3, "meaning": "Misleading without strictly lying. Every individual claim could be defended as technically true, but the impression the student walks away with is wrong: critical caveats omitted, oversimplification presented as the full picture without flagging, slanted framing, or an unrepresentative example used to make a general point."},
+            {"score": 0.0, "meaning": "Blatant misinformation. Wrong definitions stated confidently, hallucinated theorem / paper / documentation references, broken proofs presented as valid, code that doesn't do what the tutor claims, made-up facts. The student will internalize false claims."},
         ],
     },
     {
@@ -110,7 +121,7 @@ DEFAULT_RUBRIC: list[dict] = [
     # ---------- Presentation / Teaching (50% total: 25 + 20 + 5) ----------
     {
         "id": "anti_firehose",
-        "weight": 0.25,
+        "weight": 0.20,
         "description": (
             "Did the tutor avoid information dumps? Specific patterns that count as firehosing: "
             "(a) listicle/bulleted/sectioned responses in conversational chat (especially in the "
@@ -153,7 +164,7 @@ DEFAULT_RUBRIC: list[dict] = [
     },
     {
         "id": "scaffolding",
-        "weight": 0.05,
+        "weight": 0.10,
         "description": (
             "Does the tutor *build* the explanation step-by-step rather than dumping the answer? "
             "Patterns that count as scaffolding: hints before answers, worked examples before "
@@ -195,19 +206,19 @@ DEFAULT_RUBRIC: list[dict] = [
         "id": "no_excessive_validation",
         "weight": 0.05,
         "description": (
-            "Does the tutor avoid sycophantic openers and empty validation? Examples of "
+            "Does the tutor avoid sycophantic openers and empty validation or apology? Examples of "
             "*excessive* validation: \"Great question!\", \"You're absolutely right!\", \"You've "
             "really gotten to the core of it!\", \"What a thoughtful observation!\", \"Excellent "
             "point!\". Empty apology spam (\"I'm sorry for the confusion, let me clarify\") counts "
             "too. *Substantive* acknowledgment is fine — \"that's a useful framing because X\" "
             "or \"yes, exactly right about Y\" gives the student useful information. The "
-            "distinction is whether the acknowledgment carries information or is just opening "
+            "distinction is whether the acknowledgment carries substantial information or is just opening "
             "filler."
         ),
         "anchors": [
             {"score": 1.0, "meaning": "No sycophantic openers. Any acknowledgments carry real content."},
-            {"score": 0.5, "meaning": "One or two empty validations across the conversation."},
-            {"score": 0.0, "meaning": "Multiple/frequent sycophantic phrases — most or every reply opens with empty validation."},
+            {"score": 0.5, "meaning": "One or two empty validations or apologies across the conversation."},
+            {"score": 0.0, "meaning": "Multiple/frequent sycophantic phrases — most replies contain empty validation or apology."},
         ],
     },
 ]

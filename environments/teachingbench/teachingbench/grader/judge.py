@@ -22,7 +22,7 @@ from typing import Any
 import verifiers as vf
 from openai import AsyncOpenAI
 
-from teachingbench.grader.composite import compute_composite, describe as describe_formula
+from teachingbench.grader.reward_scoring import compute_composite, describe as describe_formula
 from teachingbench.prompts import DEFAULT_RUBRIC, TRANSCRIPT_JUDGE_PROMPT
 
 logger = logging.getLogger(__name__)
