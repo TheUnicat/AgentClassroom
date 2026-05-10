@@ -35,3 +35,68 @@ pre {
   overflow-x: auto;
   border: 1px solid var(--color-border);
 }
+
+/* Markdown content (chat messages, judge rationale).
+   Scoped to .md-content so it doesn't leak into the rest of the dashboard. */
+.md-content > :first-child { margin-top: 0; }
+.md-content > :last-child { margin-bottom: 0; }
+.md-content p { margin: 0.5em 0; }
+.md-content h1, .md-content h2, .md-content h3, .md-content h4, .md-content h5, .md-content h6 {
+  font-weight: 600;
+  margin: 0.7em 0 0.3em;
+  line-height: 1.25;
+}
+.md-content h1 { font-size: 1.15em; }
+.md-content h2 { font-size: 1.08em; }
+.md-content h3 { font-size: 1em; color: var(--color-text); }
+.md-content h4, .md-content h5, .md-content h6 { font-size: 0.95em; }
+.md-content ul, .md-content ol {
+  margin: 0.4em 0 0.4em 1.25em;
+  padding: 0;
+}
+.md-content ul { list-style: disc; }
+.md-content ol { list-style: decimal; }
+.md-content li { margin: 0.15em 0; }
+.md-content li > p { margin: 0.15em 0; }
+.md-content code {
+  background: rgba(124, 156, 255, 0.10);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  border: 1px solid rgba(124, 156, 255, 0.18);
+}
+.md-content pre {
+  margin: 0.5em 0;
+}
+.md-content pre code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+.md-content blockquote {
+  border-left: 3px solid var(--color-border);
+  margin: 0.5em 0;
+  padding: 0.1em 0 0.1em 0.75em;
+  color: var(--color-text-dim);
+}
+.md-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-content table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.md-content th, .md-content td {
+  border: 1px solid var(--color-border);
+  padding: 0.25em 0.6em;
+  text-align: left;
+}
+.md-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0.8em 0;
+}
+.md-content strong { color: var(--color-text); }
+.md-content em { color: var(--color-text); }

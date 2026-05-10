@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api, streamRun } from "@/lib/api";
 import type {
   JudgeBreakdown,
@@ -9,6 +11,9 @@ import type {
   RunSummary,
   Task,
 } from "@/lib/types";
+
+// READ THIS BEFORE EDITING THIS FILE:  ./AGENTS.md
+// (single-page app, state lives at the top, dual completion paths SSE+poll, etc.)
 
 type Mode = "idle" | "viewing-saved" | "running" | "done";
 
@@ -21,7 +26,12 @@ export default function Page() {
   const [breakdown, setBreakdown] = useState<JudgeBreakdown | null>(null);
   const [activeRubric, setActiveRubric] = useState<RubricCriterion[] | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
+  const [status, setStatus] = useState<string>(""); // shown to user during running
   const [error, setError] = useState<string | null>(null);
+
+  // Run IDs that existed when the user pressed "Run fresh". Used by the polling
+  // fallback to detect completion if SSE doesn't deliver the `done` event.
+  const knownRunIdsBeforeRun = useRef<Set<string>>(new Set());
 
   // Initial data load.
   useEffect(() => {
@@ -46,9 +56,41 @@ export default function Page() {
     setActiveRubric(selectedTask?.rubric ?? null);
   }, [selectedTask, mode]);
 
+  // Polling fallback: while a rollout is running, refresh the saved-runs list every
+  // 3 seconds. If a NEW run appears (one that wasn't there when we started), the
+  // backend has finished — auto-load it. This catches the case where SSE events
+  // didn't make it to the client (proxy buffering, parse hiccup, etc.).
+  useEffect(() => {
+    if (mode !== "running") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const fresh = await api.listRuns();
+        if (cancelled) return;
+        setRuns(fresh);
+        const before = knownRunIdsBeforeRun.current;
+        const newRun = fresh.find((r) => !before.has(r.id));
+        if (newRun) {
+          // Auto-load the just-finished run.
+          await loadSavedRun(newRun.id);
+        }
+      } catch {
+        /* ignore — keep polling */
+      }
+    };
+    const interval = setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+    // loadSavedRun is referenced; safe because it doesn't depend on props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
   async function loadSavedRun(runId: string) {
     setError(null);
     setMode("viewing-saved");
+    setStatus("");
     setSelectedRunId(runId);
     setMessages([]);
     setBreakdown(null);
@@ -68,28 +110,39 @@ export default function Page() {
     if (!selectedTaskId) return;
     setError(null);
     setMode("running");
+    setStatus("Starting…");
     setSelectedRunId(null);
     setMessages([]);
     setBreakdown(null);
     setActiveRubric(selectedTask?.rubric ?? null);
+    knownRunIdsBeforeRun.current = new Set(runs.map((r) => r.id));
 
     try {
       for await (const evt of streamRun({ task_id: selectedTaskId })) {
-        if (evt.type === "message") {
+        if (evt.type === "info") {
+          const s = (evt as { status?: string }).status ?? "";
+          if (s === "starting") setStatus("Starting…");
+          else if (s === "running") setStatus("Running rollout (this can take 15–60s)…");
+          else if (s) setStatus(s);
+        } else if (evt.type === "message") {
+          // First message arriving = transcript replay began
+          setStatus("Streaming transcript…");
           setMessages((prev) => [...prev, { role: evt.role, content: evt.content }]);
         } else if (evt.type === "done") {
           setBreakdown(evt.judge_breakdown);
           setMode("done");
-          // Refresh saved-runs list — the backend just appended one.
+          setStatus("");
           api.listRuns().then(setRuns).catch(() => {});
         } else if (evt.type === "error") {
           setError(evt.error);
           setMode("idle");
+          setStatus("");
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setMode("idle");
+      // SSE failed but the backend may still be running and will save on its own.
+      // The polling effect above will pick up the new run when it lands.
+      setError(`Streaming failed (will retry via polling): ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -97,9 +150,7 @@ export default function Page() {
     <main className="h-screen flex flex-col">
       <header className="border-b border-[var(--color-border)] px-6 py-3 flex items-baseline gap-4">
         <h1 className="text-xl font-semibold">TeachingBench</h1>
-        <span className="text-sm text-[var(--color-text-dim)]">
-          LLM teaching-quality eval — single-page dashboard
-        </span>
+        <span className="text-sm text-[var(--color-text-dim)]">Agent teaching eval</span>
       </header>
 
       {error && (
@@ -118,6 +169,7 @@ export default function Page() {
               onChange={(e) => {
                 setSelectedTaskId(e.target.value);
                 setMode("idle");
+                setStatus("");
                 setMessages([]);
                 setBreakdown(null);
                 setSelectedRunId(null);
@@ -131,9 +183,15 @@ export default function Page() {
             </select>
             {selectedTask && (
               <div className="mt-3 text-sm text-[var(--color-text-dim)] flex gap-4 flex-wrap">
-                <span>turns: <strong className="text-[var(--color-text)]">{selectedTask.turns}</strong></span>
-                <span>difficulty: <strong className="text-[var(--color-text)]">{selectedTask.difficulty}</strong></span>
-                <span>materials: <strong className="text-[var(--color-text)]">{selectedTask.has_materials ? "yes" : "none"}</strong></span>
+                <span>
+                  turns: <strong className="text-[var(--color-text)]">{selectedTask.turns}</strong>
+                </span>
+                <span>
+                  difficulty: <strong className="text-[var(--color-text)]">{selectedTask.difficulty}</strong>
+                </span>
+                <span>
+                  materials: <strong className="text-[var(--color-text)]">{selectedTask.has_materials ? "yes" : "none"}</strong>
+                </span>
               </div>
             )}
             {selectedTask && (
@@ -155,7 +213,9 @@ export default function Page() {
             {activeRubric ? (
               <RubricView rubric={activeRubric} scores={breakdown?.scores ?? null} />
             ) : (
-              <p className="text-[var(--color-text-dim)] text-sm">Pick a task or saved run to see its rubric.</p>
+              <p className="text-[var(--color-text-dim)] text-sm">
+                Pick a task or saved run to see its rubric.
+              </p>
             )}
           </Section>
 
@@ -167,7 +227,7 @@ export default function Page() {
         {/* Right half: chat + scores */}
         <section className="w-1/2 flex flex-col min-h-0">
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ChatView messages={messages} mode={mode} />
+            <ChatView messages={messages} mode={mode} status={status} />
           </div>
           <div className="border-t border-[var(--color-border)] px-6 py-3">
             <ScorePanel breakdown={breakdown} />
@@ -193,13 +253,13 @@ function Section({
         scroll ? "flex-1 min-h-0 overflow-y-auto" : ""
       }`}
     >
-      <h2 className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-3">
-        {title}
-      </h2>
+      <h2 className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-3">{title}</h2>
       {children}
     </div>
   );
 }
+
+// --- Rubric ----------------------------------------------------------------
 
 function RubricView({
   rubric,
@@ -209,39 +269,74 @@ function RubricView({
   scores: Record<string, number | null> | null;
 }) {
   return (
-    <ul className="space-y-3">
+    <div className="space-y-3">
       {rubric.map((c) => {
-        const score = scores?.[c.id];
-        const scored = scores && c.id in scores;
+        const scored = !!scores && c.id in scores;
+        const score = scored ? (scores![c.id] as number | null) : undefined;
         return (
-          <li key={c.id} className="text-sm">
-            <div className="flex items-baseline gap-2">
-              <strong className="text-[var(--color-text)]">{c.id}</strong>
-              {scored && (
-                <ScoreBadge value={score === null ? null : (score as number)} />
-              )}
-            </div>
-            <p className="text-[var(--color-text-dim)] text-xs mt-1 leading-relaxed">
+          <article
+            key={c.id}
+            className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-md p-3"
+          >
+            <header className="flex items-baseline gap-2 mb-1.5">
+              <h3 className="font-semibold text-[var(--color-text)]">{c.id}</h3>
+              {scored && <ScoreBadge value={score === undefined ? null : score} />}
+            </header>
+            <p className="text-xs text-[var(--color-text-dim)] leading-relaxed mb-2">
               {c.description}
             </p>
-            {c.anchors?.length ? (
-              <ul className="mt-1 text-xs space-y-0.5">
-                {c.anchors.map((a, i) => (
-                  <li key={i} className="text-[var(--color-text-dim)]">
-                    <span className="font-mono text-[var(--color-text)]">
-                      {a.score === null ? "null" : a.score.toFixed(2)}
-                    </span>{" "}
-                    — {a.meaning}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </li>
+            {c.anchors?.length ? <AnchorList anchors={c.anchors} /> : null}
+          </article>
         );
       })}
-    </ul>
+    </div>
   );
 }
+
+function AnchorList({ anchors }: { anchors: { score: number | null; meaning: string }[] }) {
+  // Order: null first (N/A), then descending numeric.
+  const sorted = [...anchors].sort((a, b) => {
+    if (a.score === null && b.score === null) return 0;
+    if (a.score === null) return -1;
+    if (b.score === null) return 1;
+    return b.score - a.score;
+  });
+  return (
+    <div className="rounded overflow-hidden border border-[var(--color-border)]">
+      {sorted.map((a, i) => (
+        <div
+          key={i}
+          className="flex items-stretch text-xs border-t border-[var(--color-border)] first:border-t-0"
+          style={{ background: anchorRowBg(a.score) }}
+        >
+          <div
+            className="px-2 py-1.5 font-mono w-14 shrink-0 text-center border-r border-[var(--color-border)] flex items-center justify-center"
+            style={{ color: anchorScoreText(a.score) }}
+          >
+            {a.score === null ? "null" : a.score.toFixed(2)}
+          </div>
+          <div className="px-3 py-1.5 leading-snug text-[var(--color-text)]">{a.meaning}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function anchorRowBg(score: number | null): string {
+  if (score === null) return "rgba(138, 146, 158, 0.06)"; // dim gray tint
+  if (score >= 0.75) return "rgba(90, 213, 138, 0.10)"; // green
+  if (score >= 0.4) return "rgba(243, 201, 105, 0.10)"; // amber
+  return "rgba(229, 115, 115, 0.10)"; // red
+}
+
+function anchorScoreText(score: number | null): string {
+  if (score === null) return "var(--color-text-dim)";
+  if (score >= 0.75) return "var(--color-good)";
+  if (score >= 0.4) return "var(--color-warn)";
+  return "var(--color-bad)";
+}
+
+// --- Score badge (used in rubric, runs list, score panel) ------------------
 
 function ScoreBadge({ value }: { value: number | null }) {
   if (value === null) {
@@ -252,16 +347,15 @@ function ScoreBadge({ value }: { value: number | null }) {
     );
   }
   const color =
-    value >= 0.8 ? "var(--color-good)" : value >= 0.5 ? "var(--color-warn)" : "var(--color-bad)";
+    value >= 0.75 ? "var(--color-good)" : value >= 0.4 ? "var(--color-warn)" : "var(--color-bad)";
   return (
-    <span
-      className="text-xs px-2 py-0.5 rounded font-mono"
-      style={{ backgroundColor: color, color: "#000" }}
-    >
+    <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ backgroundColor: color, color: "#000" }}>
       {value.toFixed(2)}
     </span>
   );
 }
+
+// --- Saved runs list -------------------------------------------------------
 
 function RunsList({
   runs,
@@ -300,7 +394,8 @@ function RunsList({
                 <ScoreBadge value={r.composite} />
               </div>
               <div className="mt-1 truncate">
-                {r.task_id ?? "?"} — <span className="text-[var(--color-text-dim)]">{r.model}</span>
+                {r.task_id ?? "?"}{" "}
+                <span className="text-[var(--color-text-dim)]">— Teacher: {r.model}</span>
               </div>
             </button>
           </li>
@@ -310,13 +405,27 @@ function RunsList({
   );
 }
 
-function ChatView({ messages, mode }: { messages: Message[]; mode: Mode }) {
+// --- Chat ------------------------------------------------------------------
+
+function ChatView({
+  messages,
+  mode,
+  status,
+}: {
+  messages: Message[];
+  mode: Mode;
+  status: string;
+}) {
   if (!messages.length) {
     return (
       <div className="h-full flex items-center justify-center text-[var(--color-text-dim)] text-sm">
-        {mode === "running"
-          ? "Running rollout…"
-          : "Pick a saved run or run fresh to see the transcript here."}
+        {mode === "running" ? (
+          <span>
+            <span className="animate-pulse">●</span> {status || "Working…"}
+          </span>
+        ) : (
+          "Pick a saved run or run fresh to see the transcript here."
+        )}
       </div>
     );
   }
@@ -326,7 +435,9 @@ function ChatView({ messages, mode }: { messages: Message[]; mode: Mode }) {
         <MessageBubble key={i} message={m} />
       ))}
       {mode === "running" && (
-        <div className="text-xs text-[var(--color-text-dim)] animate-pulse">…</div>
+        <div className="text-xs text-[var(--color-text-dim)] animate-pulse">
+          {status || "…"}
+        </div>
       )}
     </div>
   );
@@ -352,10 +463,20 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
         {label}
       </div>
-      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+      <Markdown content={message.content} />
     </div>
   );
 }
+
+function Markdown({ content }: { content: string }) {
+  return (
+    <div className="md-content text-sm">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
+// --- Score panel -----------------------------------------------------------
 
 function ScorePanel({ breakdown }: { breakdown: JudgeBreakdown | null }) {
   if (!breakdown || !breakdown.scores) {
@@ -389,9 +510,9 @@ function ScorePanel({ breakdown }: { breakdown: JudgeBreakdown | null }) {
       {breakdown.rationale && (
         <details className="text-sm mt-2">
           <summary className="cursor-pointer text-[var(--color-accent)]">judge rationale</summary>
-          <p className="mt-2 text-[var(--color-text-dim)] whitespace-pre-wrap">
-            {breakdown.rationale}
-          </p>
+          <div className="mt-2 text-[var(--color-text-dim)]">
+            <Markdown content={breakdown.rationale} />
+          </div>
         </details>
       )}
     </div>

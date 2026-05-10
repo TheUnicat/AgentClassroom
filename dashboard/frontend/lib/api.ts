@@ -44,9 +44,11 @@ export async function* streamRun(body: {
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // Normalize CRLF → LF up front so the separator scan only has to look for "\n\n".
+    // Some SSE servers (incl. some proxy paths) emit \r\n line endings.
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
-    // SSE: events are separated by \n\n. Each event has 'event:' and 'data:' lines.
+    // SSE: events are separated by a blank line. Each event has 'event:' and 'data:' lines.
     let separatorIdx;
     while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
       const rawEvent = buffer.slice(0, separatorIdx);
