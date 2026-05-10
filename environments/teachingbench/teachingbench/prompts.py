@@ -51,196 +51,163 @@ Examples of good student replies:
 """
 
 DEFAULT_RUBRIC: list[dict] = [
+    # ---------- Content (35% total: 10 + 15 + 10) ----------
     {
-        "id": "clarity",
+        "id": "answers_the_question",
+        "weight": 0.10,
         "description": (
-            "Was the tutor's explanation clear, well-paced, and free of unnecessary jargon? "
-            "Clear means the student can actually follow what's being said: technical terms are "
-            "introduced before they're used, sentence structure is easy to parse, code examples "
-            "are labeled and contextualized, and the order of ideas builds smoothly (you don't "
-            "have to already know the answer to understand the question). Unnecessary jargon is "
-            "jargon used as a shortcut that the student probably doesn't know, with no definition. "
-            "Note: clarity is NOT about message length — that's `anti_firehose`. A long message "
-            "can be perfectly clear, and a short one can be confusing."
+            "Did the tutor actually answer the student's question? The student arrived with a "
+            "specific ask — an explanation, a hint, a check on their work, a roadmap. The tutor "
+            "should converge on that ask. Failure modes: pivoting to a related but different "
+            "topic, asking endless clarifying questions when none were needed, refusing to commit "
+            "to a clear answer when one exists, or trailing off without ever getting to the "
+            "substance. Note: if the student's ask is genuinely ambiguous, a brief clarifying "
+            "question is correct — that's not a failure of this criterion."
         ),
         "anchors": [
-            {
-                "score": 1.0,
-                "meaning": (
-                    "Every explanation is easy to follow. Technical terms are defined the first "
-                    "time they're used. Sentence structure is simple and direct. Code examples "
-                    "have clear labels and are introduced before they appear. The order of ideas "
-                    "builds smoothly — each step depends only on what came before."
-                ),
-            },
-            {
-                "score": 0.5,
-                "meaning": (
-                    "Mostly clear, but at least one or two confusing patches: a term used without "
-                    "definition, a sentence that requires re-reading, a code example dropped "
-                    "without context, or an idea presented out of order so the student has to "
-                    "back-fill on their own."
-                ),
-            },
-            {
-                "score": 0.0,
-                "meaning": (
-                    "Repeatedly hard to follow. Jargon used without definition. Sentences are "
-                    "convoluted. Code examples appear without context. The order of ideas "
-                    "requires the student to already know the answer to follow the explanation."
-                ),
-            },
+            {"score": 1.0, "meaning": "Directly addresses what was asked. The conversation reaches a clear, substantive answer to the student's actual question."},
+            {"score": 0.5, "meaning": "Partially addresses the question, but meanders, addresses an adjacent question, or only gets to the substance in the last turn."},
+            {"score": 0.0, "meaning": "Avoids the question, gets pulled off into a different topic, refuses to commit, or never reaches the substance."},
         ],
     },
     {
-        "id": "anti_firehose",
+        "id": "factual_correctness",
+        "weight": 0.15,
         "description": (
-            "Did the tutor avoid firehosing the student? Firehosing is a SPECIFIC failure mode: "
-            "(1) messages way too long for what's actually being conveyed, (2) multiple unrelated "
-            "concepts crammed into a single response, (3) tangential information the student "
-            "didn't ask for ('by the way you can also...', 'as a side note...'), (4) kitchen-sink "
-            "lists of options/alternatives when one would do, (5) pushing ahead to the next "
-            "lesson before the student has confirmed they understood the current one, (6) "
-            "preview-of-coming-attractions sections at the end of every message. "
-            "Examples of (necessary) code snippets that are long generally do not count, nor do long responses that the student explicitly asks for."
-            "Messages longer than 100 words without a good reason are generally firehosing"
-            "The anti-firehose ideal is short, focused messages that respond to what the "
-            "student said and not too much more — leaving room for the student to drive the pace. "
-            "This is distinct from clarity (the firehose can be perfectly clear; it's just too much)."
+            "Are the tutor's technical claims correct? Things to check: definitions are right, "
+            "proofs and derivations don't have load-bearing errors, references to theorems/papers/"
+            "documentation aren't hallucinated, code (if any) actually does what it claims to do. "
+            "Distinguish load-bearing errors (would mislead the student) from cosmetic ones (a "
+            "typo, an oversimplification the tutor flags as such). Honest hedging when uncertain "
+            "(\"I'm not 100% sure but…\") is fine; confidently asserting wrong things is not."
         ),
         "anchors": [
-            {
-                "score": 1.0,
-                "meaning": (
-                    "Tutor messages stay short and tight throughout. Each message addresses one "
-                    "concept or one concrete next step. No optional-info detours, no "
-                    "alternative-approach digressions, no kitchen-sink option lists, no "
-                    "preview-of-next-lesson sections. When the student reports back, the tutor "
-                    "reacts to what they specifically said — not a generic lesson plan."
-                ),
-            },
-            {
-                "score": 0.5,
-                "meaning": (
-                    "Mostly focused, but exhibits at least one firehose pattern: a wall-of-text "
-                    "response with several paragraphs of dense explanation; an unprompted tangent "
-                    "(\"by the way you can also...\"); stuffing two or three concepts into one "
-                    "message instead of pacing them out; or appending a preview of the next "
-                    "lesson when the student is still working on the current one. The student "
-                    "can still follow but is being asked to absorb more at once than is ideal."
-                ),
-            },
-            {
-                "score": 0.0,
-                "meaning": (
-                    "Multiple messages are kitchen-sink walls of text — long blocks of options, "
-                    "alternatives, tangents, and preview-lessons. Concepts pile up before the "
-                    "student has digested previous ones. Reading it feels like a textbook chapter "
-                    "or a tutorial dump, not a conversation."
-                ),
-            },
+            {"score": 1.0, "meaning": "All technical claims are correct. Any uncertainty is acknowledged."},
+            {"score": 0.5, "meaning": "Mostly correct, but contains a non-load-bearing error or an oversimplification that's not flagged."},
+            {"score": 0.0, "meaning": "Contains a load-bearing factual error: a wrong definition, a broken proof step, a hallucinated reference, or code that doesn't work."},
         ],
     },
     {
         "id": "bridging",
+        "weight": 0.10,
         "description": (
-            "Did the tutor build on the student's existing materials and stated context, rather "
-            "than presenting a generic explainer? When the student has pasted slides, lecture "
-            "notes, or a textbook excerpt into the chat — or has stated specific background, "
-            "current confusion, or a specific symptom they're seeing — the tutor should "
-            "reference those things, point at specific parts of them, contradict them where the "
-            "materials are misleading, and use the student's own words / examples as the bridge "
-            "to new ideas. A failure looks like the tutor delivering a textbook explanation that "
-            "ignores everything the student just shared. **Return null** (not a number) **if the "
-            "student has not uploaded materials and has not shared specific context** — there's "
-            "nothing to bridge to, so this criterion doesn't apply and shouldn't pull the score "
-            "in either direction. A vague request like 'teach me Python from scratch' does NOT "
-            "count as bridgeable context; null applies. Pasting actual lecture slides, sharing "
-            "a specific error, or describing a specific symptom they're seeing DOES count; "
-            "score 0.0–1.0."
+            "When the student has shared materials or stated specific context (pasted slides, "
+            "their code, a traceback, a homework page, an excerpt of their notes), does the tutor "
+            "*build on* those specifics — referencing them, pointing at the relevant parts, using "
+            "the student's own examples as the bridge? A failure is delivering a generic explainer "
+            "that ignores what the student shared. Return null if the student has not shared "
+            "specific materials or context — a vague \"teach me Python from scratch\" does NOT "
+            "count as bridgeable context."
         ),
         "anchors": [
-            {
-                "score": None,
-                "meaning": (
-                    "The student has not uploaded any materials AND has not shared specific "
-                    "context (no specific confusion, no specific error, no specific background "
-                    "detail). Bridging is N/A — return null instead of a number."
-                ),
-            },
-            {
-                "score": 1.0,
-                "meaning": (
-                    "Tutor explicitly references the student's materials or stated context, "
-                    "points at specific parts of them, builds on them, and uses the student's "
-                    "own examples or words. If the materials are misleading or incomplete on "
-                    "the relevant point, the tutor calls that out instead of contradicting them "
-                    "silently."
-                ),
-            },
-            {
-                "score": 0.5,
-                "meaning": (
-                    "Tutor mentions the materials or context in passing but doesn't really build "
-                    "on them. The explanation could mostly be lifted into a generic tutorial "
-                    "without losing much — the student-specific framing is decoration, not "
-                    "scaffolding."
-                ),
-            },
-            {
-                "score": 0.0,
-                "meaning": (
-                    "Tutor presents a generic explainer that ignores or contradicts the student's "
-                    "materials and stated context. The student would get the same response from "
-                    "anyone, with no awareness of their specific situation, materials, or stated "
-                    "confusion."
-                ),
-            },
+            {"score": None, "meaning": "Student has not shared any materials or specific context. Criterion N/A — return null."},
+            {"score": 1.0, "meaning": "Tutor explicitly references the student's materials/context, points at specific parts, builds the explanation on them, and uses the student's own examples or words."},
+            {"score": 0.5, "meaning": "Tutor mentions the materials in passing but the actual content is generic — could be lifted into any tutorial without losing much."},
+            {"score": 0.0, "meaning": "Generic explainer that ignores or contradicts what the student shared. Could have been written without seeing the student's specifics."},
+        ],
+    },
+
+    # ---------- Presentation / Teaching (50% total: 25 + 20 + 5) ----------
+    {
+        "id": "anti_firehose",
+        "weight": 0.25,
+        "description": (
+            "Did the tutor avoid information dumps? Specific patterns that count as firehosing: "
+            "(a) listicle/bulleted/sectioned responses in conversational chat (especially in the "
+            "FIRST message — a listicle in turn 1 is a strong signal), (b) consistently >100 words "
+            "per message without a good reason (long necessary code snippets and student-requested "
+            "long content excepted), (c) enumerating 5 possible causes/options when one or two "
+            "was needed, (d) tangential additions (\"by the way you can also…\"), (e) "
+            "preview-of-next-lesson endings, (f) multiple unrelated concepts in one message. "
+            "Anti-firehose ideal: short focused messages that respond to what the student said, "
+            "leaving room for the student to drive pace. This is the single most common failure "
+            "mode for AI tutors and is weighted accordingly."
+        ),
+        "anchors": [
+            {"score": 1.0, "meaning": "Tight throughout. One concept per message, conversational length, no unprompted tangents, no preview-of-next-lesson endings. The tutor reacts to what the student specifically said."},
+            {"score": 0.6, "meaning": "Mostly tight but with one notable firehose pattern: an over-long response, an unprompted tangent, or a sectioned/bulleted message where prose would have served better."},
+            {"score": 0.3, "meaning": "Listicle/sectioned response in the first message OR consistently >100 words per message OR enumerates many options when one was needed. Anchor here for any of these patterns."},
+            {"score": 0.0, "meaning": "Pervasive firehose: multiple messages are wall-of-text dumps with structured lists, alternative approaches, tangents, preview-of-next-lesson. Reads like a textbook chapter, not a chat."},
+        ],
+    },
+    {
+        "id": "meeting_student_level",
+        "weight": 0.20,
+        "description": (
+            "Does the tutor calibrate to the student's actual level? Read the student's messages "
+            "FIRST to determine what they know and don't know (their stated background, "
+            "vocabulary, kinds of mistakes, what they say they don't understand). THEN evaluate "
+            "whether the tutor pitches at that level. Two-sided failure mode: (a) too advanced — "
+            "explaining basic things using concepts the student has already disclaimed knowing, "
+            "citing theorems above their level repeatedly, especially after the student said they "
+            "don't follow; (b) too elementary — re-explaining things the student demonstrated they "
+            "know, treating an expert as a beginner. Also includes following the student's "
+            "redirects (\"i don't need version A, just show me B\")."
+        ),
+        "anchors": [
+            {"score": 1.0, "meaning": "Consistently pitches at the student's stated/demonstrated level. Uses analogies appropriate to their background. Doesn't waste time on things they already know. Respects redirects."},
+            {"score": 0.6, "meaning": "Starts at the wrong level (too advanced or too elementary) but adjusts within one or two messages after student feedback."},
+            {"score": 0.3, "meaning": "Inconsistent calibration throughout — alternates between over- and under-explanation."},
+            {"score": 0.0, "meaning": "Cites concepts above the student's stated level *repeatedly*, even after the student said they don't understand; explains advanced things using more advanced things. Or: ignores explicit redirects and continues at the wrong level."},
         ],
     },
     {
         "id": "scaffolding",
+        "weight": 0.05,
         "description": (
-            "Did the tutor meet the student where they were and pace the lesson accordingly? "
-            "Scaffolding looks like: diagnosing what the student already knows before teaching, "
-            "introducing one new idea at a time, verifying the student followed before adding "
-            "the next idea, using analogies appropriate to the student's stated level, and "
-            "noticing when the student is confused versus when they're ready to move on. Not "
-            "scaffolding looks like: a one-size-fits-all lesson plan delivered regardless of the "
-            "student's responses, lecturing past signs of confusion, assuming knowledge the "
-            "student hasn't demonstrated, or treating the conversation as a script the tutor "
-            "has already written. Scaffolding is about ADAPTATION; firehose is about VOLUME — "
-            "they're independent failures."
+            "Does the tutor *build* the explanation step-by-step rather than dumping the answer? "
+            "Patterns that count as scaffolding: hints before answers, worked examples before "
+            "abstractions, asking before telling (diagnostic questioning), checking-for-"
+            "understanding before piling on, concrete-before-abstract. The opposite is delivering "
+            "a wholesale answer or starting from the most abstract framing. Note: scaffolding "
+            "differs from anti-firehose (volume) and meeting_student_level (calibration) — it's "
+            "about *structure* of the lesson, how it builds. Asking too many questions before "
+            "answering when the student wanted a direct answer is also a scaffolding failure "
+            "(over-Socratic)."
         ),
         "anchors": [
-            {
-                "score": 1.0,
-                "meaning": (
-                    "Tutor starts from what the student knows (often by asking), introduces one "
-                    "new idea at a time, checks understanding before continuing, and adapts the "
-                    "next step based on what the student actually said. The pacing visibly "
-                    "matches the student's stated level."
-                ),
-            },
-            {
-                "score": 0.5,
-                "meaning": (
-                    "Some adaptation, but the tutor mostly executes a pre-planned sequence and "
-                    "doesn't fully react to where the student actually is. New ideas are "
-                    "introduced before previous ones are verified, or the tutor re-explains "
-                    "things the student already demonstrated they understood, or skips checking "
-                    "whether the student followed."
-                ),
-            },
-            {
-                "score": 0.0,
-                "meaning": (
-                    "No real scaffolding. The tutor delivers a fixed lesson plan regardless of "
-                    "what the student says. Confusion is ignored. Prerequisites are assumed "
-                    "without checking. The student's responses don't change what comes next — "
-                    "the tutor would have written the same messages to anyone."
-                ),
-            },
+            {"score": 1.0, "meaning": "Builds up from where the student is. Uses concrete examples to motivate abstract points. Asks targeted questions to elicit understanding. Knows when to direct-answer vs when to draw out."},
+            {"score": 0.5, "meaning": "Some scaffolding but skips steps, jumps to abstraction too fast, or over-Socratics when a direct answer was needed."},
+            {"score": 0.0, "meaning": "No real scaffolding: drops the full answer wholesale or starts at the most abstract framing without setup. Or: pure Socratic interrogation when the student wanted an answer."},
+        ],
+    },
+
+    # ---------- Style (15% total: 10 + 5) ----------
+    {
+        "id": "clarity",
+        "weight": 0.10,
+        "description": (
+            "Independent of message length and student level: is the writing itself clear? "
+            "Sentences parse on first read. Technical terms are introduced before being used. No "
+            "unexplained logical jumps within a single explanation. No sentences that try to do "
+            "five things at once. No jargon used as if defined when it wasn't. Equally bad: "
+            "being too terse for the specific thing being explained, such that the student has "
+            "to back-fill steps the tutor skipped. Note: clarity is about *writing*, not about "
+            "*level* (which is meeting_student_level) or *length* (which is anti_firehose)."
+        ),
+        "anchors": [
+            {"score": 1.0, "meaning": "Clean, readable. Each explanation builds smoothly — no unexplained leaps, no tangled sentences, jargon introduced before use."},
+            {"score": 0.5, "meaning": "One or two confusing passages: a logical jump, a sentence that requires re-reading, a term used before being introduced."},
+            {"score": 0.0, "meaning": "Repeatedly hard to follow. Tangled sentences, frequent logical leaps, jargon used as if already defined, or so terse that the student has to fill in missing steps."},
+        ],
+    },
+    {
+        "id": "no_excessive_validation",
+        "weight": 0.05,
+        "description": (
+            "Does the tutor avoid sycophantic openers and empty validation? Examples of "
+            "*excessive* validation: \"Great question!\", \"You're absolutely right!\", \"You've "
+            "really gotten to the core of it!\", \"What a thoughtful observation!\", \"Excellent "
+            "point!\". Empty apology spam (\"I'm sorry for the confusion, let me clarify\") counts "
+            "too. *Substantive* acknowledgment is fine — \"that's a useful framing because X\" "
+            "or \"yes, exactly right about Y\" gives the student useful information. The "
+            "distinction is whether the acknowledgment carries information or is just opening "
+            "filler."
+        ),
+        "anchors": [
+            {"score": 1.0, "meaning": "No sycophantic openers. Any acknowledgments carry real content."},
+            {"score": 0.5, "meaning": "One or two empty validations across the conversation."},
+            {"score": 0.0, "meaning": "Multiple/frequent sycophantic phrases — most or every reply opens with empty validation."},
         ],
     },
 ]
@@ -266,9 +233,10 @@ Transcript:
 
 Return only a JSON object matching the provided schema. For each criterion, return \
 either a number in [0, 1] OR null (if the criterion doesn't apply to this transcript — \
-see each criterion's description for when null is appropriate). The reward is the mean \
-of the non-null per-criterion scores; null criteria are skipped, not counted as zero. \
-The anchors are calibration points, not the only allowed values — interpolate freely \
+see each criterion's description for when null is appropriate). Score each criterion \
+independently on its own merits; the composite is computed downstream as a weighted \
+combination, so do not try to weight or compensate across criteria yourself. The \
+anchors are calibration points, not the only allowed values — interpolate freely \
 between them.\
 """
 

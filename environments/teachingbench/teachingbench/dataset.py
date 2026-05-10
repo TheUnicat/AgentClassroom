@@ -155,6 +155,7 @@ def _parse_material_ref(raw, *, where: str) -> tuple[str, str | None]:
 def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
     out: list[dict] = []
     seen_ids: set[str] = set()
+    saw_explicit_weight = False
     for i, item in enumerate(rubric):
         if not isinstance(item, dict):
             raise ValueError(f"{where}: rubric[{i}] must be a mapping, got {type(item).__name__}")
@@ -168,6 +169,18 @@ def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
         desc = str(item.get("description") or "").strip()
         if not desc:
             raise ValueError(f"{where}: rubric[{cid}].description must be a non-empty string")
+        # Optional weight (must be non-negative; all-or-nothing across criteria).
+        raw_w = item.get("weight")
+        if raw_w is None:
+            weight = None
+        else:
+            try:
+                weight = float(raw_w)
+            except (TypeError, ValueError):
+                raise ValueError(f"{where}: rubric[{cid}].weight must be a number")
+            if weight < 0:
+                raise ValueError(f"{where}: rubric[{cid}].weight must be >= 0")
+            saw_explicit_weight = True
         anchors = item.get("anchors") or []
         clean_anchors: list[dict] = []
         for j, a in enumerate(anchors):
@@ -185,9 +198,30 @@ def _validate_rubric(rubric: list, *, where: str) -> list[dict]:
             if not meaning:
                 raise ValueError(f"{where}: rubric[{cid}].anchors[{j}].meaning must be non-empty")
             clean_anchors.append({"score": score, "meaning": meaning})
-        out.append({"id": cid, "description": desc, "anchors": clean_anchors})
+        out.append({"id": cid, "description": desc, "anchors": clean_anchors, "weight": weight})
     if not out:
         raise ValueError(f"{where}: rubric must have at least one criterion")
+
+    # Normalize weights: if none specified, distribute equally. If some specified,
+    # all must be specified, and they must sum to ~1.0.
+    if not saw_explicit_weight:
+        equal = 1.0 / len(out)
+        for c in out:
+            c["weight"] = equal
+    else:
+        missing = [c["id"] for c in out if c["weight"] is None]
+        if missing:
+            raise ValueError(
+                f"{where}: weights are all-or-nothing — got weights for some criteria "
+                f"but not: {missing}"
+            )
+        total = sum(c["weight"] for c in out)
+        if total <= 0:
+            raise ValueError(f"{where}: rubric weights sum to {total}, must be > 0")
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(
+                f"{where}: rubric weights sum to {total:.3f}, expected ~1.0 (±0.01)"
+            )
     return out
 
 

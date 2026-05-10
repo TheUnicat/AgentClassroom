@@ -22,6 +22,7 @@ from typing import Any
 import verifiers as vf
 from openai import AsyncOpenAI
 
+from teachingbench.grader.composite import compute_composite, describe as describe_formula
 from teachingbench.prompts import DEFAULT_RUBRIC, TRANSCRIPT_JUDGE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -102,14 +103,30 @@ async def judge_transcript(
 
     raw_scores = parsed.get("scores") or {}
     scores: dict[str, float | None] = {}
+    weights: dict[str, float] = {}
     for c in rubric:
-        v = raw_scores.get(c["id"])
-        scores[c["id"]] = None if v is None else _clamp01(v)
-    nums = [v for v in scores.values() if isinstance(v, (int, float))]
-    composite = sum(nums) / len(nums) if nums else 0.0
+        cid = c["id"]
+        v = raw_scores.get(cid)
+        scores[cid] = None if v is None else _clamp01(v)
+        # Fallback to equal weighting if a custom rubric was passed in without
+        # going through _validate_rubric (defensive — shouldn't usually happen).
+        w = c.get("weight")
+        weights[cid] = float(w) if isinstance(w, (int, float)) else 1.0 / len(rubric)
+
+    # The composite formula lives in `composite.py` — edit there to retune.
+    composite_result = compute_composite(scores, weights)
     rationale = str(parsed.get("rationale") or "")
 
-    return {"scores": scores, "rationale": rationale, "composite": composite, "rubric": rubric}
+    return {
+        "scores": scores,
+        "weights": weights,
+        "rationale": rationale,
+        "composite": composite_result["composite"],
+        "composite_raw": composite_result["composite_raw"],
+        "composite_terms": composite_result["terms"],
+        "formula": describe_formula(),
+        "rubric": rubric,
+    }
 
 
 async def _transcript_score(
