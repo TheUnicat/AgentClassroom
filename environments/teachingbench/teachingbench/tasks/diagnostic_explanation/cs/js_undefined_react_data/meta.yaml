@@ -1,6 +1,6 @@
 task_id: cs/js_undefined_react_data
 subject: cs
-topic: "Cannot read properties of undefined" in React from data not yet loaded
+topic: Cannot read properties of undefined in React from data not yet loaded
 difficulty: introductory
 turns: 3
 

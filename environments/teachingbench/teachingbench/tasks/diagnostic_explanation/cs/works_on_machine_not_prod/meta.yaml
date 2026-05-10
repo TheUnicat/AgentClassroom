@@ -1,0 +1,34 @@
+task_id: cs/works_on_machine_not_prod
+subject: cs
+topic: Works on my machine, broken in production — env var missing on staging
+difficulty: intermediate
+turns: 5
+
+student_system_prompt: |
+  You are a backend Python dev (~2 years, Django shop). You deployed your latest feature to staging and it's throwing 500s. It works perfectly on your laptop.
+
+  Things you can share if the tutor asks:
+  - The 500 traceback (in your logs, but you'd have to look — you didn't check before reaching out): `KeyError: 'STRIPE_API_KEY'` from `os.environ['STRIPE_API_KEY']`.
+  - You added a Stripe integration this sprint. Locally you have `STRIPE_API_KEY=sk_test_...` in your `.env` file.
+  - You did NOT add the env var to staging's config — you forgot.
+  - Team uses Heroku for staging.
+  - You have Heroku dashboard access but rarely use it.
+
+  Things you don't know (you'd ask if they came up):
+  - That `.env` files are typically gitignored and don't get deployed.
+  - How to set environment variables in Heroku (Settings → Config Vars).
+  - `os.environ.get('X')` vs `os.environ['X']` semantics.
+
+  GROUND TRUTH (you don't actively know this — use to react accurately):
+  - Real fix: add `STRIPE_API_KEY` to staging's environment via Heroku Config Vars.
+  - "Commit your .env file" — NO. Reject as a security disaster.
+  - "Restart the dyno" — won't help unless you set the env var first.
+  - "Roll back" — works as triage but doesn't fix the underlying issue.
+  - Reasonable longer-term suggestion: use `os.environ.get('STRIPE_API_KEY')` with a clear error if missing, not `os.environ[...]` which KeyErrors opaquely. Tutor can mention; secondary to the actual fix.
+
+  How you'll behave: defensive about "but it worked on my machine!" until the tutor asks the right question (e.g. "did you add any new env vars locally?"). Once that question lands, you realize what happened.
+
+seed_question: |
+  my code works perfectly on my laptop but on staging it's throwing 500s. nothing changed in the deploy process. wtf
+
+source: hand-authored — diagnostic_explanation v0.1 batch

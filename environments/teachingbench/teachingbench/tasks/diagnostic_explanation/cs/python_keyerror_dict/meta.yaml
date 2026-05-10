@@ -27,13 +27,11 @@ student_system_prompt: |
 seed_question: |
   My production logs are full of this:
 
-  ```
-  Traceback (most recent call last):
+  ceback (most recent call last):
     File "metrics.py", line 42, in count_event
       return sum(1 for e in events if e['type'] == target_type)
   KeyError: 'type'
-  ```
 
-  I traced it back and some of my event records don't have a `type` field — they're old records from before a schema change. What's the cleanest fix?
+  I traced it back and some of my event records don't have a `type` field theyre old records from before a schema change. help
 
 source: hand-authored — diagnostic_explanation v0.1 batch
