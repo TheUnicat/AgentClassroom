@@ -66,7 +66,7 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Directly addresses what was asked. The conversation reaches a clear, substantive answer to the student's actual question."},
-            {"score": 0.5, "meaning": "Partially addresses the question, but meanders, addresses an adjacent question, or only gets to the substance in the last turn."},
+            {"score": 0.4, "meaning": "Partially addresses the question, but meanders, addresses an adjacent question, excessive tangents, or only gets to the substance in the last turn."},
             {"score": 0.0, "meaning": "Avoids the question, gets pulled off into a different topic, refuses to commit, or never reaches the substance."},
         ],
     },
@@ -93,7 +93,7 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "All technical claims are correct. Any uncertainty is acknowledged when present."},
-            {"score": 0.75, "meaning": "Mostly correct, with a non-load-bearing minor error or an oversimplification — small enough that it doesn't materially mislead the student."},
+            {"score": 0.7, "meaning": "Mostly correct, with a non-load-bearing minor error or an oversimplification — small enough that it doesn't materially mislead the student."},
             {"score": 0.3, "meaning": "Misleading without strictly lying. Every individual claim could be defended as technically true, but the impression the student walks away with is wrong: critical caveats omitted, oversimplification presented as the full picture without flagging, slanted framing, or an unrepresentative example used to make a general point."},
             {"score": 0.0, "meaning": "Blatant misinformation. Wrong definitions stated confidently, hallucinated theorem / paper / documentation references, broken proofs presented as valid, code that doesn't do what the tutor claims, made-up facts. The student will internalize false claims."},
         ],
@@ -113,8 +113,8 @@ DEFAULT_RUBRIC: list[dict] = [
         "anchors": [
             {"score": None, "meaning": "Student has not shared any materials or specific context. Criterion N/A — return null."},
             {"score": 1.0, "meaning": "Tutor explicitly references the student's materials/context, points at specific parts, builds the explanation on them, and uses the student's own examples or words."},
-            {"score": 0.5, "meaning": "Tutor mentions the materials in passing but the actual content is generic — could be lifted into any tutorial without losing much."},
-            {"score": 0.0, "meaning": "Generic explainer that ignores or contradicts what the student shared. Could have been written without seeing the student's specifics."},
+            {"score": 0.4, "meaning": "Tutor mentions the materials in passing but the actual content is generic — could be lifted into any tutorial without losing much."},
+            {"score": 0.0, "meaning": "Generic explainer that ignores or contradicts what the student shared. Could have been written without seeing the student's specifics. Response is inappropriate for the student's circumstances."},
         ],
     },
 
@@ -125,20 +125,22 @@ DEFAULT_RUBRIC: list[dict] = [
         "description": (
             "Did the tutor avoid information dumps? Specific patterns that count as firehosing: "
             "(a) listicle/bulleted/sectioned responses in conversational chat (especially in the "
-            "FIRST message — a listicle in turn 1 is a strong signal), (b) consistently >100 words "
+            "FIRST message — a listicle or long turn 1 is a strong signal), (b) consistently >100 words "
             "per message without a good reason (long necessary code snippets and student-requested "
             "long content excepted), (c) enumerating 5 possible causes/options when one or two "
             "was needed, (d) tangential additions (\"by the way you can also…\"), (e) "
             "preview-of-next-lesson endings, (f) multiple unrelated concepts in one message. "
+            "(g) Excessive examples–frequently creating new, lengthy examples or analogies that overwhelm "
+            "(h) Repeating the same information frequently (\"Once again, this circles back to idea..\") when unnecessary AND student does not engage with it. "
             "Anti-firehose ideal: short focused messages that respond to what the student said, "
-            "leaving room for the student to drive pace. This is the single most common failure "
+            "leaving room for the student to lead. This is the most common failure "
             "mode for AI tutors and is weighted accordingly."
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Tight throughout. One concept per message, conversational length, no unprompted tangents, no preview-of-next-lesson endings. The tutor reacts to what the student specifically said."},
-            {"score": 0.6, "meaning": "Mostly tight but with one notable firehose pattern: an over-long response, an unprompted tangent, or one or two sectioned/bulleted message where prose would have served better."},
-            {"score": 0.3, "meaning": "Inappropriate listicle/sectioned response in several messages OR consistently >120 words per message without clear reason OR often enumerates many options when one was needed. Anchor here for any of these patterns."},
-            {"score": 0.0, "meaning": "Pervasive firehose: multiple messages are wall-of-text dumps with structured lists, alternative approaches, tangents, preview-of-next-lesson. Reads like a textbook chapter, not a chat."},
+            {"score": 0.5, "meaning": "Mostly tight but with one notable firehose pattern: an over-long response, multiple unprompted tangents, or one or two sectioned/bulleted message where prose would have served better."},
+            {"score": 0.3, "meaning": "Inappropriate listicle/sectioned response in several messages OR consistently >100 words per message without clear reason OR often enumerates many options when one was needed OR frequent verbose repetition. Anchor here for any of these patterns."},
+            {"score": 0.0, "meaning": "Pervasive firehose: many firehose patterns, multiple messages are wall-of-text dumps with structured lists, alternative approaches, tangents, new complex examples, preview-of-next-lesson. Reads like a textbook chapter, not a chat."},
         ],
     },
     {
@@ -159,8 +161,8 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Consistently pitches at the student's stated/demonstrated level. Uses analogies appropriate to their background. Doesn't waste time on things they already know. Respects redirects."},
-            {"score": 0.6, "meaning": "Starts at the wrong level (too advanced or too elementary) but adjusts within one or two messages after student feedback."},
-            {"score": 0.3, "meaning": "Inconsistent calibration throughout — frequently over- or under-explains."},
+            {"score": 0.6, "meaning": "Starts at the wrong level (too advanced or too elementary) but adjusts within one or two messages after student feedback. Student sometimes confused."},
+            {"score": 0.3, "meaning": "Inconsistent calibration throughout — frequently over- or under-explains. Student often confused and learning is slowed."},
             {"score": 0.0, "meaning": "Cites concepts above the student's stated level *repeatedly*, even after the student said they don't understand (or the converse); explains advanced things using more advanced things. Or: ignores explicit redirects and continues at the wrong level."},
         ],
     },
@@ -171,7 +173,7 @@ DEFAULT_RUBRIC: list[dict] = [
             "Does the tutor *build* the explanation step-by-step rather than dumping the answer? "
             "Patterns that count as scaffolding: hints before answers, worked examples before "
             "abstractions, asking before telling (diagnostic questioning), checking-for-"
-            "understanding before piling on, concrete-before-abstract. The opposite is delivering "
+            "understanding before piling on, concrete-before-abstract, going from simple/concrete to very complex/abstract in a single message. The opposite is delivering "
             "a wholesale answer or starting from the most abstract framing. Note: scaffolding "
             "differs from anti-firehose (volume) and meeting_student_level (calibration) — it's "
             "about *structure* of the lesson, how it builds. Asking too many questions before "
@@ -180,8 +182,8 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "Builds up from where the student is. Uses concrete examples to motivate abstract points. Asks targeted questions to elicit understanding. Knows when to direct-answer vs when to draw out."},
-            {"score": 0.5, "meaning": "Some scaffolding but skips steps, jumps to abstraction too fast, or over-Socratics when a direct answer was needed."},
-            {"score": 0.0, "meaning": "No real scaffolding: drops the full answer wholesale or starts at the most abstract framing without setup. Or: pure Socratic interrogation when the student wanted an answer."},
+            {"score": 0.5, "meaning": "Some scaffolding but skips steps, jumps to abstraction very quickly, inappropriately large jumps in complexity, or over-Socratics when a direct answer was needed."},
+            {"score": 0.0, "meaning": "No real scaffolding: drops the full answer wholesale or starts at the most abstract framing without setup or frequent messages that jump from simple to very abstract. Or: pure Socratic interrogation when the student wanted an answer."},
         ],
     },
 
@@ -220,7 +222,7 @@ DEFAULT_RUBRIC: list[dict] = [
         ),
         "anchors": [
             {"score": 1.0, "meaning": "No sycophantic openers. Any acknowledgments carry real content."},
-            {"score": 0.5, "meaning": "One or two empty validations or apologies across the conversation."},
+            {"score": 0.4, "meaning": "One or two empty validations or apologies across the conversation."},
             {"score": 0.0, "meaning": "Multiple/frequent sycophantic phrases — most replies contain empty validation or apology."},
         ],
     },

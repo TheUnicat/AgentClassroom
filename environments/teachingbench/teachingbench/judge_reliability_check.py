@@ -10,7 +10,7 @@ For full-pipeline noise (different student responses, different tutor seeds,
 different judge calls all combined), see `task_reliability_check.py`.
 
 Usage:
-    python -m teachingbench.judge_reliability_check <run_id> [--n 8] [--judge-model gpt-5.4-nano]
+    python -m teachingbench.judge_reliability_check <run_id> [--n 8] [--judge-model gpt-5.4]
 
 Where <run_id> is either:
     - a directory name under environments/teachingbench/outputs/runs/  (e.g.
@@ -46,8 +46,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n", type=int, default=8, help="Number of judge replays. Default: 8.")
     p.add_argument(
         "--judge-model",
-        default=os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4-nano"),
-        help="Judge model (defaults to $DEFAULT_JUDGE_MODEL or gpt-5.4-nano).",
+        default=os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4"),
+        help="Judge model (defaults to $DEFAULT_JUDGE_MODEL or gpt-5.4).",
     )
     p.add_argument(
         "--temperature",
@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         "--save",
         default=None,
         help="Optional path to write the per-trial scores as JSON (one record per trial).",
+    )
+    p.add_argument(
+        "--use-current-rubric",
+        action="store_true",
+        help="Override the saved rubric with the current DEFAULT_RUBRIC from prompts.py. "
+             "Useful when you've tightened the rubric after the rollout was saved.",
     )
     return p.parse_args()
 
@@ -211,6 +217,9 @@ async def main() -> None:
     results_path = resolve_results_path(args.run)
     print(f"Loading rollout from: {results_path}")
     rollout = load_rollout(results_path)
+    if args.use_current_rubric:
+        rollout["rubric"] = DEFAULT_RUBRIC
+        print("Using CURRENT DEFAULT_RUBRIC (overriding saved rubric).")
     print(f"Task: {rollout['task_id']}  Topic: {rollout['topic']}  "
           f"Rubric: {[c['id'] for c in rollout['rubric']]}  "
           f"Transcript chars: {len(rollout['transcript'])}")

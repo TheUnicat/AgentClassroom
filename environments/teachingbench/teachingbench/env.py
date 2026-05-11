@@ -27,6 +27,7 @@ from verifiers.utils.tool_utils import convert_func_to_tool_def, is_valid_tool_c
 
 from teachingbench.dataset import build_dataset
 from teachingbench.grader.judge import TeachingRubric
+from teachingbench.multimodal import attach_media_to_first_user_message
 from teachingbench.student.base import Student
 from teachingbench.student.llm import LLMStudent
 from teachingbench.tools import TOOLS
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 def load_environment(
     *,
     judge_client: AsyncOpenAI | None = None,
-    judge_model: str = "gpt-5.4-nano",
+    judge_model: str = "gpt-5.4",
     student_client: AsyncOpenAI | None = None,
     student_model: str | None = None,
     default_turns: int = 4,
@@ -98,6 +99,7 @@ class TeachingEnv(vf.MultiTurnEnv):
     async def setup_state(self, state: vf.State) -> vf.State:
         info = _info_dict(state)
         materials = info.get("materials", "")
+        materials_media = info.get("materials_media") or []
         topic = info.get("topic", "(unknown topic)")
         subject = info.get("subject", "(unknown subject)")
         turns = int(info.get("turns") or self._default_turns)
@@ -108,7 +110,13 @@ class TeachingEnv(vf.MultiTurnEnv):
         # Inject the tutor's per-task system prompt at the front of the prompt.
         state["prompt"] = _ensure_system(state["prompt"], tutor_system_prompt)
 
+        # If the task references PDFs/images in _materials/, attach them to the seed
+        # user message as multipart content blocks so the tutor model can read them.
+        if materials_media:
+            state["prompt"] = attach_media_to_first_user_message(state["prompt"], materials_media)
+
         state["materials"] = materials
+        state["materials_media"] = materials_media
         state["topic"] = topic
         state["subject"] = subject
         state["turns"] = turns

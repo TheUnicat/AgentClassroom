@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="TeachingBench smoke test (one rollout).")
     p.add_argument("--task", default=None, help="Task ID under teachingbench/tasks/.")
     p.add_argument("--tutor-model", default=None, help="Model id for the tutor under test.")
-    p.add_argument("--judge-model", default="gpt-5.4-nano", help="Model for the LLM judge.")
+    p.add_argument("--judge-model", default="gpt-5.4", help="Model for the LLM judge.")
     p.add_argument("--student-model", default=None, help="Model for the simulated student. Defaults to --judge-model.")
     p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL (e.g. Prime Inference).")
     p.add_argument("--api-key-env", default="OPENAI_API_KEY", help="Env var to read the API key from.")

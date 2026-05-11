@@ -32,7 +32,7 @@ class TeachingRubric(vf.JudgeRubric):
     def __init__(
         self,
         judge_client: AsyncOpenAI | None = None,
-        judge_model: str = "gpt-5.4-nano",
+        judge_model: str = "gpt-5.4",
         judge_sampling_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:

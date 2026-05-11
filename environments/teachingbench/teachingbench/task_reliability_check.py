@@ -17,7 +17,7 @@ Usage:
         --tutor-model gpt-5.4-mini \\
         --n 6 \\
         [--student-model gpt-5.4-mini] \\
-        [--judge-model gpt-5.4-nano] \\
+        [--judge-model gpt-5.4] \\
         [--max-concurrent 4]
 """
 
@@ -52,8 +52,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--student-model", default=None, help="Defaults to --judge-model.")
     p.add_argument(
         "--judge-model",
-        default=os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4-nano"),
-        help="One judge call per trial. Default: $DEFAULT_JUDGE_MODEL or gpt-5.4-nano.",
+        default=os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4"),
+        help="One judge call per trial. Default: $DEFAULT_JUDGE_MODEL or gpt-5.4.",
     )
     p.add_argument("--n", type=int, default=6, help="Number of full rollouts. Default: 6.")
     p.add_argument(
