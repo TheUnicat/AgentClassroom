@@ -35,9 +35,12 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 app = FastAPI(title="TeachingBench Dashboard API")
 
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
+_allowed_origin_regex = os.environ.get("ALLOWED_ORIGIN_REGEX")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=[o.strip() for o in _allowed_origins_env.split(",") if o.strip()],
+    allow_origin_regex=_allowed_origin_regex,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

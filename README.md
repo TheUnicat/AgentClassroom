@@ -1,3 +1,4 @@
+### (Demo at https://agentclassroom.pages.dev)
 # TeachingBench
 
 A Verifiers / Prime-Intellect RL environment that evaluates how well an LLM **teaches a specific concept** to a specific student, grounded in materials the student is actually using (slides, textbook excerpts, problem sets).
