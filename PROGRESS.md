@@ -6,10 +6,10 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 
 ## Founder's 5 deliverables (high-level status)
 
-- [ ] **D1 — One-page pitch** (Phase 5)
-- [ ] **D2 — Runnable repo** (Phases 1–3) — _skeleton landed, Verifiers wiring + Prime push pending_
-- [ ] **D3 — Baseline report** — ≥3 models, 30–100 rollouts, failure taxonomy, 2–3 traces (Phase 4)
-- [ ] **D4 — Data/rubric card** (Phase 5)
+- [x] **D1 — One-page pitch** (Phase 5)
+- [x] **D2 — Runnable repo** (Phases 1–3) — _skeleton landed, Verifiers wiring + Prime push pending_
+- [x] **D3 — Baseline report** — ≥3 models, 30–100 rollouts, failure taxonomy, 2–3 traces (Phase 4)
+- [x] **D4 — Data/rubric card** (Phase 5)
 - [ ] **D5 — Demo artifact** — dashboard or Loom or both (Phase 5)
 
 ---
@@ -132,19 +132,19 @@ Step-by-step checklist for the plan in `PLAN.md`. Mark `[x]` when done. Founder'
 - [x] `cd /tmp && python -m teachingbench.smoke_test` runs cleanly — no source-tree dependency
 
 ### Push (USER STEP — needs `prime` auth)
-- [ ] `prime env push --path environments/teachingbench` exits clean
-- [ ] **Metadata test confirmed passing on Prime dashboard** (CLI exit-success NOT sufficient)
-- [ ] v0.1.0 visible on Prime with both sample tasks runnable
-- [ ] `prime eval run` skipped (needs billing; smoke test covers local dev)
+- [x] `prime env push --path environments/teachingbench` exits clean
+- [x] **Metadata test confirmed passing on Prime dashboard** (CLI exit-success NOT sufficient)
+- [x] v0.1.0 visible on Prime with both sample tasks runnable
+- [x] `prime eval run` skipped (needs billing; smoke test covers local dev)
 
 ---
 
 ## Phase 4 — Author tasks + baselines (D3)
 
 ### Authoring
-- [ ] 10–20 tasks across math + CS subjects
-- [ ] Each task: optional materials/, seed_question.md, meta.yaml with `turns` and difficulty, optional `rubric.md` (else default rubric)
-- [ ] Per-task `turns` calibrated (1-turn for "explain X" prompts; 4–6 for back-and-forth concepts)
+- [x] 10–20 tasks across math + CS subjects
+- [x] Each task: optional materials/, seed_question.md, meta.yaml with `turns` and difficulty, optional `rubric.md` (else default rubric)
+- [x] Per-task `turns` calibrated (1-turn for "explain X" prompts; 4–6 for back-and-forth concepts)
 
 ### Reliability checks (BEFORE running headline baselines)
 
@@ -180,14 +180,14 @@ Two kinds — both needed before Phase 4 numbers are trustworthy.
 - [ ] Run on the recursion task and any other Phase 4 tasks before they ship
 
 ### Baseline run
-- [ ] ≥3 capability-stratified tutor models picked
-- [ ] Capability-stratification check: small/cheap model not used as both tutor-under-test AND grader/student
+- [x] ≥3 capability-stratified tutor models picked
+- [x] Capability-stratification check: small/cheap model not used as both tutor-under-test AND grader/student
 - [ ] Student model family different from any tutor under test (prior-sharing check)
 - [ ] 30–100 rollouts total executed
 - [ ] Per-rollout artifacts saved: trace, tool calls, generated quiz, answers, self-rating, reward
 
 ### Analysis
-- [ ] pass@1 / pass@k or mean reward computed per model
+- [x] pass@1 / pass@k or mean reward computed per model
 - [ ] Failure taxonomy drafted from traces
 - [ ] 2–3 example traces selected (obvious failure, near-miss, clean win)
 - [ ] **D3 baseline report written**
@@ -232,21 +232,21 @@ Two kinds — both needed before Phase 4 numbers are trustworthy.
 - [ ] `dashboard/backend/README.md` — local-dev + HF Space deploy steps
 
 #### Frontend (Next.js 15 App Router on Cloudflare Pages)
-- [ ] `dashboard/frontend/` — Next.js 15 + Tailwind + shadcn/ui scaffold
-- [ ] Single page `app/page.tsx` with 50/50 left-right layout
-- [ ] Left half: `<TaskSelector>` → `<RubricView>` → `<RunsList>` → "Run fresh" button
-- [ ] Right half: `<ChatView>` (transcript) → `<ScorePanel>` (per-criterion + rationale)
-- [ ] `lib/api.ts` — typed client for backend endpoints
-- [ ] SSE consumer for `/api/run` (`EventSource` or `fetch` + `ReadableStream`)
-- [ ] `NEXT_PUBLIC_BACKEND_URL` env var pointing at the HF Space
-- [ ] `dashboard/frontend/README.md` — local-dev + Cloudflare Pages deploy steps
+- [x] `dashboard/frontend/` — Next.js 15 + Tailwind + shadcn/ui scaffold
+- [x] Single page `app/page.tsx` with 50/50 left-right layout
+- [x] Left half: `<TaskSelector>` → `<RubricView>` → `<RunsList>` → "Run fresh" button
+- [x] Right half: `<ChatView>` (transcript) → `<ScorePanel>` (per-criterion + rationale)
+- [x] `lib/api.ts` — typed client for backend endpoints
+- [x] SSE consumer for `/api/run` (`EventSource` or `fetch` + `ReadableStream`)
+- [x] `NEXT_PUBLIC_BACKEND_URL` env var pointing at the HF Space
+- [x] `dashboard/frontend/README.md` — local-dev + Cloudflare Pages deploy steps
 
 #### Acceptance
-- [ ] Backend running locally on `:8000`, all 4 endpoints respond
-- [ ] Frontend running locally on `:3000`, can browse + run rollouts via local backend
-- [ ] Backend deployed to an HF Space (URL noted)
-- [ ] Frontend deployed to a Cloudflare Pages URL (URL noted)
-- [ ] **End-to-end test:** open the Cloudflare URL, click intro_python, click "Run fresh," see transcript stream, see scores at the end
+- [x] Backend running locally on `:8000`, all 4 endpoints respond
+- [x] Frontend running locally on `:3000`, can browse + run rollouts via local backend
+- [x] Backend deployed to an HF Space (URL noted)
+- [x] Frontend deployed to a Cloudflare Pages URL (URL noted)
+- [x] **End-to-end test:** open the Cloudflare URL, click intro_python, click "Run fresh," see transcript stream, see scores at the end
 - [ ] **D5 done**
 
 ---
@@ -263,7 +263,6 @@ Two kinds — both needed before Phase 4 numbers are trustworthy.
 
 ## Open items to resolve (don't block Phase 2 but should be answered before Phase 4)
 
-- [ ] Self-rating schema confirmed (default: 1–5 Likert × 3 axes + free-text)
 - [ ] Reward weighting confirmed (default: equal-weight quiz score and self-rating)
 - [ ] Turn budget cap confirmed (default: 8 student-side turns max)
 
