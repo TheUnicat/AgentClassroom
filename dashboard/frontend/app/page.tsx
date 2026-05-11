@@ -352,6 +352,23 @@ export default function Page() {
             className="border-r border-[var(--color-border)] flex flex-col min-h-0"
             style={{ width: `${leftPct}%` }}
           >
+            <Section title={`Saved runs (${filteredRuns.length}${filteredRuns.length !== runs.length ? ` of ${runs.length}` : ""})`} scroll>
+              <RunsFilters
+                runs={runs}
+                model={filterModel}
+                onModelChange={setFilterModel}
+                scoreBand={filterScoreBand}
+                onScoreBandChange={setFilterScoreBand}
+                query={filterQuery}
+                onQueryChange={setFilterQuery}
+              />
+              <RunsList
+                runs={filteredRuns}
+                selectedRunId={selectedRunId}
+                onSelect={loadSavedRun}
+              />
+            </Section>
+
             <Section title="Task">
               <select
                 className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded px-3 py-2 text-base"
@@ -374,19 +391,27 @@ export default function Page() {
                 ))}
               </select>
               {selectedTask && (
-                <div className="mt-3 text-sm text-[var(--color-text-dim)] flex gap-4 flex-wrap">
+                <div className="mt-3 text-sm text-[var(--color-text)] flex gap-x-4 gap-y-1 flex-wrap">
                   <span>
-                    turns: <strong className="text-[var(--color-text)]">{selectedTask.turns}</strong>
+                    <span className="text-[var(--color-text-dim)]">subject:</span>{" "}
+                    <strong>{selectedTask.subject}</strong>
                   </span>
                   <span>
-                    difficulty: <strong className="text-[var(--color-text)]">{selectedTask.difficulty}</strong>
+                    <span className="text-[var(--color-text-dim)]">turns:</span>{" "}
+                    <strong>{selectedTask.turns}</strong>
                   </span>
                   <span>
-                    materials: <strong className="text-[var(--color-text)]">{selectedTask.has_materials ? "yes" : "none"}</strong>
+                    <span className="text-[var(--color-text-dim)]">difficulty:</span>{" "}
+                    <strong>{selectedTask.difficulty}</strong>
+                  </span>
+                  <span>
+                    <span className="text-[var(--color-text-dim)]">materials:</span>{" "}
+                    <strong>{selectedTask.has_materials ? "yes" : "none"}</strong>
                   </span>
                   {activeTeacher && (
                     <span>
-                      teacher: <strong className="text-[var(--color-text)]">{displayModel(activeTeacher)}</strong>
+                      <span className="text-[var(--color-text-dim)]">teacher:</span>{" "}
+                      <strong>{displayModel(activeTeacher)}</strong>
                     </span>
                   )}
                 </div>
@@ -433,23 +458,6 @@ export default function Page() {
                   Pick a task or saved run to see its rubric.
                 </p>
               )}
-            </Section>
-
-            <Section title={`Saved runs (${filteredRuns.length}${filteredRuns.length !== runs.length ? ` of ${runs.length}` : ""})`} scroll>
-              <RunsFilters
-                runs={runs}
-                model={filterModel}
-                onModelChange={setFilterModel}
-                scoreBand={filterScoreBand}
-                onScoreBandChange={setFilterScoreBand}
-                query={filterQuery}
-                onQueryChange={setFilterQuery}
-              />
-              <RunsList
-                runs={filteredRuns}
-                selectedRunId={selectedRunId}
-                onSelect={loadSavedRun}
-              />
             </Section>
           </aside>
 
@@ -637,18 +645,34 @@ function anchorScoreText(score: number | null): string {
 
 // --- Score badge -----------------------------------------------------------
 
-function ScoreBadge({ value }: { value: number | null }) {
+function ScoreBadge({
+  value,
+  prominent,
+}: {
+  value: number | null;
+  prominent?: boolean;
+}) {
+  const sizing = prominent
+    ? "text-2xl px-3.5 py-1.5 font-bold"
+    : "text-xs px-2 py-0.5";
   if (value === null) {
+    // Greyer styling than the colored bands, so N/A reads as "skipped" not "low score".
     return (
-      <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-panel-hover)] text-[var(--color-text-dim)]">
-        null (N/A)
+      <span
+        className={`rounded font-mono ${sizing}`}
+        style={{
+          background: "rgba(138, 146, 158, 0.18)",
+          color: "var(--color-text-dim)",
+        }}
+      >
+        N/A
       </span>
     );
   }
   const color =
     value >= 0.75 ? "var(--color-good)" : value >= 0.4 ? "var(--color-warn)" : "var(--color-bad)";
   return (
-    <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ backgroundColor: color, color: "#000" }}>
+    <span className={`rounded font-mono ${sizing}`} style={{ backgroundColor: color, color: "#000" }}>
       {value.toFixed(2)}
     </span>
   );
@@ -914,31 +938,37 @@ function ScorePanel({
   }
   const composite = breakdown.composite;
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline gap-3 flex-wrap">
-        <span className="text-xs uppercase tracking-wider text-[var(--color-text-dim)]">
-          score@1
-        </span>
-        {composite !== undefined && composite !== null ? (
-          <ScoreBadge value={composite} />
-        ) : (
-          <span className="text-[var(--color-text-dim)]">—</span>
-        )}
-        {teacher && (
-          <span className="text-sm text-[var(--color-text-dim)]">
-            Teacher: <span className="text-[var(--color-text)]">{displayModel(teacher)}</span>
+    <div className="space-y-3">
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <span className="text-sm font-bold uppercase tracking-wider text-[var(--color-text)]">
+            Score@1
           </span>
-        )}
-        {judge && (
-          <span className="text-sm text-[var(--color-text-dim)]">
-            Judge: <span className="text-[var(--color-text)]">{judge}</span>
-          </span>
-        )}
+          {composite !== undefined && composite !== null ? (
+            <ScoreBadge value={composite} prominent />
+          ) : (
+            <span className="text-[var(--color-text-dim)]">—</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-sm">
+          {teacher && (
+            <span className="px-2 py-1 rounded bg-[var(--color-panel-hover)] text-[var(--color-text)]">
+              <span className="text-[var(--color-text-dim)]">Teacher: </span>
+              <strong>{displayModel(teacher)}</strong>
+            </span>
+          )}
+          {judge && (
+            <span className="px-2 py-1 rounded bg-[var(--color-panel-hover)] text-[var(--color-text)]">
+              <span className="text-[var(--color-text-dim)]">Judge: </span>
+              <strong>{judge}</strong>
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex gap-3 flex-wrap">
         {Object.entries(breakdown.scores).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5 text-sm">
-            <span className="text-[var(--color-text-dim)]">{prettyCriterionId(k)}</span>
+            <span className="text-[var(--color-text)]">{prettyCriterionId(k)}</span>
             <ScoreBadge value={v as number | null} />
           </div>
         ))}
@@ -946,9 +976,9 @@ function ScorePanel({
       {breakdown.rationale && (
         <div className="text-sm mt-2">
           <div className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
-            Judge Rationale {judge && <span className="normal-case tracking-normal">({judge})</span>}
+            Judge Rationale
           </div>
-          <div className="text-[var(--color-text-dim)]">
+          <div className="text-[var(--color-text)]">
             <Markdown content={breakdown.rationale} />
           </div>
         </div>
@@ -1088,7 +1118,7 @@ function ResultsView({
 
   const yLabel = metric === "mean@1" ? "Mean@1" : `Pass@τ (τ = ${tau.toFixed(2)})`;
   const yFmt = (v: number) =>
-    metric === "mean@1" ? v.toFixed(2) : `${Math.round(v * 100)}%`;
+    metric === "mean@1" ? v.toFixed(2) : `${(v * 100).toFixed(1)}%`;
 
   // ===== headline KPI cards =====
   // mean@1 across all rollouts; Pass@0.75 across all rollouts; best model + score; n.
@@ -1186,7 +1216,7 @@ function ResultsView({
             />
             <KpiCard
               label="Pass@0.75"
-              value={overallPassRate !== null ? `${Math.round(overallPassRate * 100)}%` : "—"}
+              value={overallPassRate !== null ? `${(overallPassRate * 100).toFixed(1)}%` : "—"}
               sub="overall rollouts ≥ 0.75"
             />
             <KpiCard
