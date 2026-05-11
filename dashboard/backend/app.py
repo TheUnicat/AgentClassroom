@@ -61,7 +61,7 @@ def _default_runs_dir() -> Path:
 RUNS_DIR = Path(os.environ.get("TEACHINGBENCH_RUNS_DIR", str(_default_runs_dir())))
 DEFAULT_TUTOR_MODEL = os.environ.get("DEFAULT_TUTOR_MODEL", "gpt-5.4-nano")
 DEFAULT_STUDENT_MODEL = os.environ.get("DEFAULT_STUDENT_MODEL", "gpt-5.4-mini")
-DEFAULT_JUDGE_MODEL = os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4-nano")
+DEFAULT_JUDGE_MODEL = os.environ.get("DEFAULT_JUDGE_MODEL", "claude-opus-4-7")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
 
@@ -309,4 +309,7 @@ def health() -> dict[str, Any]:
         "runs_dir": str(RUNS_DIR),
         "runs_dir_exists": RUNS_DIR.is_dir(),
         "openai_key_set": bool(os.environ.get("OPENAI_API_KEY")),
+        "default_tutor_model": DEFAULT_TUTOR_MODEL,
+        "default_student_model": DEFAULT_STUDENT_MODEL,
+        "default_judge_model": DEFAULT_JUDGE_MODEL,
     }

@@ -10,7 +10,16 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  health: () => getJson<{ status: string; openai_key_set: boolean }>("/api/health"),
+  health: () =>
+    getJson<{
+      status: string;
+      openai_key_set: boolean;
+      runs_dir?: string;
+      runs_dir_exists?: boolean;
+      default_tutor_model?: string;
+      default_student_model?: string;
+      default_judge_model?: string;
+    }>("/api/health"),
   listTasks: () => getJson<Task[]>("/api/tasks"),
   listRuns: () => getJson<RunSummary[]>("/api/runs"),
   getRun: (id: string) => getJson<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),

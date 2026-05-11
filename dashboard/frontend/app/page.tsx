@@ -36,9 +36,10 @@ function displayModel(id: string | null | undefined): string {
   return MODEL_DISPLAY[id] ?? id;
 }
 
-// Hardcoded judge model display — the saved 228-rollout batch used GPT-5.4 as judge.
-// For fresh rollouts we'll override with the actual configured judge if surfaced.
-const DEFAULT_JUDGE_DISPLAY = "GPT-5.4";
+// Fallback judge display if /api/health doesn't surface one (older backend).
+// The actual judge for saved rollouts isn't stored per-rollout yet; we use the
+// backend's currently-configured judge as a best-effort attribution.
+const DEFAULT_JUDGE_DISPLAY = "Opus 4.7";
 
 // Convert "factual_correctness" → "Factual Correctness", "answers_the_question" → "Answers the Question".
 function prettyCriterionId(id: string): string {
@@ -125,6 +126,15 @@ export default function Page() {
   // Model picker for fresh rollouts.
   const [pickedTeacher, setPickedTeacher] = useState<string>("gpt-5.4-nano");
 
+  // Configured judge model (from /api/health). Falls back to DEFAULT_JUDGE_DISPLAY.
+  const [judgeDisplay, setJudgeDisplay] = useState<string>(DEFAULT_JUDGE_DISPLAY);
+
+  // Saved-runs filters (Demo sidebar). Persisted across view switches so a
+  // click-to-drill from the Results page can prefilter to one model.
+  const [filterModel, setFilterModel] = useState<string | null>(null);
+  const [filterScoreBand, setFilterScoreBand] = useState<"high" | "mid" | "low" | null>(null);
+  const [filterQuery, setFilterQuery] = useState<string>("");
+
   // Left/right split (% width of left pane), draggable.
   const [leftPct, setLeftPct] = useState<number>(40);
   const draggingRef = useRef(false);
@@ -135,16 +145,46 @@ export default function Page() {
   useEffect(() => {
     (async () => {
       try {
-        const [t, r] = await Promise.all([api.listTasks(), api.listRuns()]);
+        const [t, r, h] = await Promise.all([
+          api.listTasks(),
+          api.listRuns(),
+          api.health().catch(() => null),
+        ]);
         setTasks(t);
         setRuns(r);
         if (t.length && !selectedTaskId) setSelectedTaskId(t[0].task_id);
+        if (h?.default_judge_model) setJudgeDisplay(displayModel(h.default_judge_model));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Apply current filters to the saved-runs list.
+  const filteredRuns = runs.filter((r) => {
+    if (filterModel && r.model !== filterModel) return false;
+    if (filterScoreBand) {
+      const s = r.composite;
+      if (s === null || s === undefined) return false;
+      if (filterScoreBand === "high" && s < 0.75) return false;
+      if (filterScoreBand === "mid" && (s < 0.4 || s >= 0.75)) return false;
+      if (filterScoreBand === "low" && s >= 0.4) return false;
+    }
+    if (filterQuery) {
+      const q = filterQuery.toLowerCase();
+      if (!(r.task_id ?? "").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Used by chart bars: drill into Demo view, prefilter to a specific teacher model.
+  function drillToModel(modelId: string) {
+    setFilterModel(modelId);
+    setFilterScoreBand(null);
+    setFilterQuery("");
+    setView("inspect");
+  }
 
   const selectedTask = tasks.find((t) => t.task_id === selectedTaskId) ?? null;
 
@@ -235,7 +275,7 @@ export default function Page() {
       // teacher model is encoded in the run id's last __ segment.
       const runSummary = runs.find((r) => r.id === runId);
       setActiveTeacher(runSummary?.model ?? null);
-      setActiveJudge(DEFAULT_JUDGE_DISPLAY);
+      setActiveJudge(judgeDisplay);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setMode("idle");
@@ -387,8 +427,21 @@ export default function Page() {
               )}
             </Section>
 
-            <Section title="Saved runs" scroll>
-              <RunsList runs={runs} selectedRunId={selectedRunId} onSelect={loadSavedRun} />
+            <Section title={`Saved runs (${filteredRuns.length}${filteredRuns.length !== runs.length ? ` of ${runs.length}` : ""})`} scroll>
+              <RunsFilters
+                runs={runs}
+                model={filterModel}
+                onModelChange={setFilterModel}
+                scoreBand={filterScoreBand}
+                onScoreBandChange={setFilterScoreBand}
+                query={filterQuery}
+                onQueryChange={setFilterQuery}
+              />
+              <RunsList
+                runs={filteredRuns}
+                selectedRunId={selectedRunId}
+                onSelect={loadSavedRun}
+              />
             </Section>
           </aside>
 
@@ -404,6 +457,13 @@ export default function Page() {
           />
 
           <section className="flex-1 flex flex-col min-h-0">
+            {mode === "viewing-saved" && selectedRunId && (
+              <div className="border-b border-[var(--color-border)] px-6 py-2 text-xs text-[var(--color-text-dim)] flex items-center gap-2 bg-[var(--color-panel)]">
+                <span>📂 Showing saved rollout</span>
+                <span className="font-mono">{runs.find((r) => r.id === selectedRunId)?.timestamp ?? ""}</span>
+                <span className="text-[var(--color-text)]">— click <strong>Run new rollout</strong> to generate a fresh one.</span>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <ChatView messages={messages} mode={mode} status={status} />
             </div>
@@ -418,7 +478,7 @@ export default function Page() {
         </div>
       )}
 
-      {view === "results" && <ResultsView runs={runs} />}
+      {view === "results" && <ResultsView runs={runs} onDrillToModel={drillToModel} />}
       {view === "report" && <ReportView />}
     </main>
   );
@@ -588,6 +648,101 @@ function ScoreBadge({ value }: { value: number | null }) {
 
 // --- Saved runs list -------------------------------------------------------
 
+// Sort dropdown + filter chips above the runs list. Chips read state from the parent.
+function RunsFilters({
+  runs,
+  model,
+  onModelChange,
+  scoreBand,
+  onScoreBandChange,
+  query,
+  onQueryChange,
+}: {
+  runs: RunSummary[];
+  model: string | null;
+  onModelChange: (m: string | null) => void;
+  scoreBand: "high" | "mid" | "low" | null;
+  onScoreBandChange: (b: "high" | "mid" | "low" | null) => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+}) {
+  // Model chip set = whatever models actually appear in the data, in TEACHER_MODELS order.
+  const presentModels = new Set(runs.map((r) => r.model));
+  const orderedModels = [
+    ...TEACHER_MODELS.map((m) => m.id),
+    ...Array.from(presentModels).filter((m) => !TEACHER_MODELS.some((tm) => tm.id === m)).sort(),
+  ].filter((m) => presentModels.has(m));
+
+  function Chip({
+    active,
+    onClick,
+    children,
+    color,
+  }: {
+    active: boolean;
+    onClick: () => void;
+    children: React.ReactNode;
+    color?: string;
+  }) {
+    return (
+      <button
+        onClick={onClick}
+        className={`text-xs px-2 py-1 rounded border transition-colors ${
+          active
+            ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-black font-medium"
+            : "border-[var(--color-border)] text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)] hover:text-[var(--color-text)]"
+        }`}
+        style={active && color ? { background: color, borderColor: color } : undefined}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 mb-3">
+      <input
+        type="text"
+        placeholder="Search task…"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded px-2.5 py-1.5 text-sm placeholder:text-[var(--color-text-dim)] focus:outline-none focus:border-[var(--color-accent)]"
+      />
+      <div className="flex flex-wrap gap-1">
+        <Chip active={!model} onClick={() => onModelChange(null)}>
+          All teachers
+        </Chip>
+        {orderedModels.map((m) => (
+          <Chip
+            key={m}
+            active={model === m}
+            onClick={() => onModelChange(model === m ? null : m)}
+            color={MODEL_COLOR[m]}
+          >
+            {displayModel(m)}
+          </Chip>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <Chip active={!scoreBand} onClick={() => onScoreBandChange(null)}>
+          Any score
+        </Chip>
+        <Chip active={scoreBand === "high"} onClick={() => onScoreBandChange(scoreBand === "high" ? null : "high")}>
+          High (≥0.75)
+        </Chip>
+        <Chip active={scoreBand === "mid"} onClick={() => onScoreBandChange(scoreBand === "mid" ? null : "mid")}>
+          Mid (0.4–0.75)
+        </Chip>
+        <Chip active={scoreBand === "low"} onClick={() => onScoreBandChange(scoreBand === "low" ? null : "low")}>
+          Low (&lt;0.4)
+        </Chip>
+      </div>
+    </div>
+  );
+}
+
+type SortKey = "newest" | "score-desc" | "score-asc" | "task";
+
 function RunsList({
   runs,
   selectedRunId,
@@ -597,42 +752,66 @@ function RunsList({
   selectedRunId: string | null;
   onSelect: (id: string) => void;
 }) {
-  if (!runs.length) {
+  const [sort, setSort] = useState<SortKey>("newest");
+  const sorted = [...runs].sort((a, b) => {
+    if (sort === "newest") return (b.timestamp ?? "").localeCompare(a.timestamp ?? "");
+    if (sort === "task") return (a.task_id ?? "").localeCompare(b.task_id ?? "");
+    const av = a.composite ?? -Infinity;
+    const bv = b.composite ?? -Infinity;
+    return sort === "score-desc" ? bv - av : av - bv;
+  });
+  if (!sorted.length) {
     return (
       <p className="text-[var(--color-text-dim)] text-sm">
-        No saved runs yet. Run new to create one.
+        No runs match the current filters.
       </p>
     );
   }
   return (
-    <ul className="space-y-1">
-      {runs.map((r) => {
-        const active = r.id === selectedRunId;
-        return (
-          <li key={r.id}>
-            <button
-              onClick={() => onSelect(r.id)}
-              className={`w-full text-left text-sm px-3 py-2 rounded border ${
-                active
-                  ? "border-[var(--color-accent)] bg-[var(--color-panel-hover)]"
-                  : "border-transparent hover:bg-[var(--color-panel-hover)]"
-              }`}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono text-xs text-[var(--color-text-dim)]">
-                  {r.timestamp}
-                </span>
+    <>
+      <div className="flex items-center gap-2 mb-2 text-xs text-[var(--color-text-dim)]">
+        <span>Sort:</span>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded px-1.5 py-0.5"
+        >
+          <option value="newest">Newest first</option>
+          <option value="score-desc">Score, high→low</option>
+          <option value="score-asc">Score, low→high</option>
+          <option value="task">Task A→Z</option>
+        </select>
+      </div>
+      <ul className="divide-y divide-[var(--color-border)] border border-[var(--color-border)] rounded overflow-hidden">
+        {sorted.map((r) => {
+          const active = r.id === selectedRunId;
+          // Compact, table-like row: score badge / task (truncated) / teacher.
+          return (
+            <li key={r.id}>
+              <button
+                onClick={() => onSelect(r.id)}
+                className={`grid grid-cols-[48px_1fr_auto] items-center gap-2 px-2 py-1.5 text-xs w-full text-left ${
+                  active
+                    ? "bg-[var(--color-panel-hover)] border-l-2 border-[var(--color-accent)]"
+                    : "hover:bg-[var(--color-panel-hover)] border-l-2 border-transparent"
+                }`}
+              >
                 <ScoreBadge value={r.composite} />
-              </div>
-              <div className="mt-1 truncate">
-                {r.task_id ?? "?"}{" "}
-                <span className="text-[var(--color-text-dim)]">— Teacher: {displayModel(r.model)}</span>
-              </div>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+                <span className="truncate text-[var(--color-text)]" title={r.task_id ?? ""}>
+                  {r.task_id ?? "?"}
+                </span>
+                <span
+                  className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{ background: (MODEL_COLOR[r.model] ?? "#9aa0a6") + "33", color: MODEL_COLOR[r.model] ?? "#9aa0a6" }}
+                >
+                  {displayModel(r.model)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 
@@ -797,82 +976,162 @@ const CRITERION_COLOR: Record<string, string> = {
   "no_excessive_validation":"#ec4899",
 };
 
-type Bucket = { sum: number; n: number; nullN: number };
+type Bucket = {
+  sum: number;
+  n: number;
+  nullN: number;
+  min: number;
+  max: number;
+  values: number[]; // kept for pass@τ recomputation as τ slides
+};
 
-function avgOf(b: Bucket | undefined): number | null {
+function newBucket(): Bucket {
+  return { sum: 0, n: 0, nullN: 0, min: Infinity, max: -Infinity, values: [] };
+}
+
+function addToBucket(b: Bucket, v: number | null | undefined) {
+  if (v === null) {
+    b.nullN += 1;
+    return;
+  }
+  if (typeof v !== "number") return;
+  b.sum += v;
+  b.n += 1;
+  if (v < b.min) b.min = v;
+  if (v > b.max) b.max = v;
+  b.values.push(v);
+}
+
+function meanOf(b: Bucket | undefined): number | null {
   return b && b.n > 0 ? b.sum / b.n : null;
 }
 
-function ResultsView({ runs }: { runs: RunSummary[] }) {
+function passAtOf(b: Bucket | undefined, tau: number): number | null {
+  if (!b || b.n === 0) return null;
+  let pass = 0;
+  for (const v of b.values) if (v >= tau) pass += 1;
+  return pass / b.n;
+}
+
+type Metric = "mean@1" | "pass";
+
+function ResultsView({
+  runs,
+  onDrillToModel,
+}: {
+  runs: RunSummary[];
+  onDrillToModel: (modelId: string) => void;
+}) {
   const [criterion, setCriterion] = useState<string>("Overall");
   const [chart2Model, setChart2Model] = useState<string>("All Models");
+  const [metric, setMetric] = useState<Metric>("mean@1");
+  const [tau, setTau] = useState<number>(0.75);
 
-  // Criteria present in the data (deterministic order).
   const presentCriteria = new Set<string>();
   for (const r of runs) {
     if (r.scores) for (const k of Object.keys(r.scores)) presentCriteria.add(k);
   }
   const criteria = CRITERION_ORDER.filter((k) => k === "Overall" || presentCriteria.has(k));
 
-  // Aggregate per (model, criterion). criterion="Overall" uses r.composite.
+  // Aggregate per (model, criterion).
   const cell: Record<string, Record<string, Bucket>> = {};
   function get(m: string, c: string): Bucket {
     cell[m] ??= {};
-    return (cell[m][c] ??= { sum: 0, n: 0, nullN: 0 });
+    return (cell[m][c] ??= newBucket());
   }
   for (const r of runs) {
-    const m = r.model;
-    // Overall
-    {
-      const b = get(m, "Overall");
-      const v = r.composite;
-      if (v === null) b.nullN += 1;
-      else if (typeof v === "number") {
-        b.sum += v;
-        b.n += 1;
-      }
-    }
-    // Per criterion
+    addToBucket(get(r.model, "Overall"), r.composite);
     if (r.scores) {
-      for (const [k, v] of Object.entries(r.scores)) {
-        const b = get(m, k);
-        if (v === null) b.nullN += 1;
-        else if (typeof v === "number") {
-          b.sum += v;
-          b.n += 1;
-        }
-      }
+      for (const [k, v] of Object.entries(r.scores)) addToBucket(get(r.model, k), v);
     }
   }
 
-  // Stable model order: TEACHER_MODELS list, then any extras alphabetically.
   const knownIds = TEACHER_MODELS.map((m) => m.id);
   const extras = Object.keys(cell).filter((m) => !knownIds.includes(m)).sort();
   const models = [...knownIds, ...extras].filter((m) => cell[m]);
 
-  // === Chart 1: per-model bars for one criterion ===
-  const chart1Data = models.map((m) => ({
-    id: m,
-    display: displayModel(m),
-    color: MODEL_COLOR[m] ?? "#9aa0a6",
-    value: avgOf(cell[m]?.[criterion]),
-    n: cell[m]?.[criterion]?.n ?? 0,
-    nullN: cell[m]?.[criterion]?.nullN ?? 0,
-  }));
+  // Metric helper: returns {value, range?}. Range only meaningful for mean@1.
+  function val(b: Bucket | undefined): { value: number | null; range?: { min: number; max: number } } {
+    if (!b || b.n === 0) return { value: null };
+    if (metric === "mean@1") {
+      return { value: b.sum / b.n, range: { min: b.min, max: b.max } };
+    }
+    return { value: passAtOf(b, tau) };
+  }
 
-  // === Chart 2: per-criterion bars for one (or all) model ===
-  const chart2Tabs = ["All Models", ...models.map((m) => displayModel(m))];
+  const yLabel = metric === "mean@1" ? "mean@1" : `Pass@τ (τ = ${tau.toFixed(2)})`;
+  const yFmt = (v: number) =>
+    metric === "mean@1" ? v.toFixed(2) : `${Math.round(v * 100)}%`;
+
+  // ===== headline KPI cards =====
+  // mean@1 across all rollouts; Pass@0.75 across all rollouts; best model + score; n.
+  let overallMeanSum = 0;
+  let overallMeanN = 0;
+  let overallPass = 0;
+  for (const r of runs) {
+    if (typeof r.composite === "number") {
+      overallMeanSum += r.composite;
+      overallMeanN += 1;
+      if (r.composite >= 0.75) overallPass += 1;
+    }
+  }
+  const overallMean = overallMeanN > 0 ? overallMeanSum / overallMeanN : null;
+  const overallPassRate = overallMeanN > 0 ? overallPass / overallMeanN : null;
+  let bestModel: { id: string; value: number } | null = null;
+  for (const m of models) {
+    const v = meanOf(cell[m]?.["Overall"]);
+    if (v !== null && (!bestModel || v > bestModel.value)) bestModel = { id: m, value: v };
+  }
+
   const totalRuns = runs.length;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 px-8 py-6 overflow-y-auto">
-      <div>
-        <h2 className="text-xl font-semibold mb-1">
-          Results across {totalRuns} rollouts
-        </h2>
-        <p className="text-sm text-[var(--color-text-dim)]">
-          mean@1 — per-rollout judge score, averaged. (One rollout per task per model.)
-        </p>
+      <div className="flex items-baseline justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-xl font-semibold mb-1">Results across {totalRuns} rollouts</h2>
+          <p className="text-sm text-[var(--color-text-dim)]">
+            mean@1 = one rollout per task per model, averaged. Pass@τ = % of rollouts at or above τ.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-[var(--color-border)] overflow-hidden">
+            <button
+              onClick={() => setMetric("mean@1")}
+              className={`px-3 py-1.5 text-sm ${
+                metric === "mean@1"
+                  ? "bg-[var(--color-accent)] text-black font-semibold"
+                  : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
+              }`}
+            >
+              mean@1
+            </button>
+            <button
+              onClick={() => setMetric("pass")}
+              className={`px-3 py-1.5 text-sm border-l border-[var(--color-border)] ${
+                metric === "pass"
+                  ? "bg-[var(--color-accent)] text-black font-semibold"
+                  : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
+              }`}
+            >
+              Pass@τ
+            </button>
+          </div>
+          {metric === "pass" && (
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text-dim)]">
+              τ = <span className="font-mono text-[var(--color-text)]">{tau.toFixed(2)}</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={tau}
+                onChange={(e) => setTau(parseFloat(e.target.value))}
+                className="w-32 accent-[var(--color-accent)]"
+              />
+            </label>
+          )}
+        </div>
       </div>
 
       {totalRuns === 0 ? (
@@ -881,12 +1140,39 @@ function ResultsView({ runs }: { runs: RunSummary[] }) {
         </p>
       ) : (
         <>
-          {/* Chart 1: mean@1 by model, criterion picker */}
-          <section className="mt-6">
+          {/* Headline KPI cards */}
+          <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiCard label="Rollouts" value={String(totalRuns)} sub={`${models.length} models`} />
+            <KpiCard
+              label="mean@1 (all)"
+              value={overallMean !== null ? overallMean.toFixed(2) : "—"}
+              sub="across all rollouts"
+            />
+            <KpiCard
+              label="Pass@0.75"
+              value={overallPassRate !== null ? `${Math.round(overallPassRate * 100)}%` : "—"}
+              sub="overall rollouts ≥ 0.75"
+            />
+            <KpiCard
+              label="Best teacher"
+              value={bestModel ? displayModel(bestModel.id) : "—"}
+              sub={bestModel ? `mean@1 = ${bestModel.value.toFixed(2)}` : ""}
+              valueColor={bestModel ? MODEL_COLOR[bestModel.id] : undefined}
+            />
+          </div>
+
+          {/* Chart 1 */}
+          <section className="mt-8">
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-2">
               <h3 className="text-base font-semibold">
-                mean@1 by model · <span className="text-[var(--color-text-dim)] font-normal">{criterion === "Overall" ? "Overall" : prettyCriterionId(criterion)}</span>
+                {yLabel} by model ·{" "}
+                <span className="text-[var(--color-text-dim)] font-normal">
+                  {criterion === "Overall" ? "Overall" : prettyCriterionId(criterion)}
+                </span>
               </h3>
+              <span className="text-xs text-[var(--color-text-dim)]">
+                click a bar to drill into rollouts
+              </span>
             </div>
             <CriterionTabs
               tabs={criteria}
@@ -896,27 +1182,35 @@ function ResultsView({ runs }: { runs: RunSummary[] }) {
             />
             <div className="mt-4">
               <SingleBarChart
-                bars={chart1Data.map((d) => ({
-                  id: d.id,
-                  label: d.display,
-                  sublabel: `n = ${d.n}${d.nullN ? `  (${d.nullN} n/a)` : ""}`,
-                  value: d.value,
-                  color: d.color,
-                }))}
-                yLabel="mean@1"
+                bars={models.map((m) => {
+                  const v = val(cell[m]?.[criterion]);
+                  const b = cell[m]?.[criterion];
+                  return {
+                    id: m,
+                    label: displayModel(m),
+                    sublabel: b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "",
+                    value: v.value,
+                    range: v.range,
+                    color: MODEL_COLOR[m] ?? "#9aa0a6",
+                    onClick: () => onDrillToModel(m),
+                  };
+                })}
+                yLabel={yLabel}
+                yFmt={yFmt}
               />
             </div>
           </section>
 
-          {/* Chart 2: mean@1 by criterion, model picker */}
-          <section className="mt-10">
+          {/* Chart 2 */}
+          <section className="mt-10 mb-4">
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-2">
               <h3 className="text-base font-semibold">
-                mean@1 by criterion · <span className="text-[var(--color-text-dim)] font-normal">{chart2Model}</span>
+                {yLabel} by criterion ·{" "}
+                <span className="text-[var(--color-text-dim)] font-normal">{chart2Model}</span>
               </h3>
             </div>
             <CriterionTabs
-              tabs={chart2Tabs}
+              tabs={["All Models", ...models.map((m) => displayModel(m))]}
               active={chart2Model}
               onSelect={setChart2Model}
               renderLabel={(t) => t}
@@ -926,32 +1220,40 @@ function ResultsView({ runs }: { runs: RunSummary[] }) {
                 <GroupedBarChart
                   groups={criteria.map((c) => ({
                     label: c === "Overall" ? "Overall" : prettyCriterionId(c),
-                    bars: models.map((m) => ({
-                      id: m,
-                      label: displayModel(m),
-                      value: avgOf(cell[m]?.[c]),
-                      color: MODEL_COLOR[m] ?? "#9aa0a6",
-                    })),
+                    bars: models.map((m) => {
+                      const v = val(cell[m]?.[c]);
+                      return {
+                        id: m,
+                        label: displayModel(m),
+                        value: v.value,
+                        color: MODEL_COLOR[m] ?? "#9aa0a6",
+                        onClick: () => onDrillToModel(m),
+                      };
+                    }),
                   }))}
                   legend={models.map((m) => ({ label: displayModel(m), color: MODEL_COLOR[m] ?? "#9aa0a6" }))}
-                  yLabel="mean@1"
+                  yLabel={yLabel}
+                  yFmt={yFmt}
                 />
               ) : (
                 (() => {
                   const m = models.find((x) => displayModel(x) === chart2Model)!;
                   return (
                     <SingleBarChart
-                      bars={criteria.map((c) => ({
-                        id: c,
-                        label: c === "Overall" ? "Overall" : prettyCriterionId(c),
-                        sublabel: (() => {
-                          const b = cell[m]?.[c];
-                          return b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "";
-                        })(),
-                        value: avgOf(cell[m]?.[c]),
-                        color: CRITERION_COLOR[c] ?? "#9aa0a6",
-                      }))}
-                      yLabel="mean@1"
+                      bars={criteria.map((c) => {
+                        const v = val(cell[m]?.[c]);
+                        const b = cell[m]?.[c];
+                        return {
+                          id: c,
+                          label: c === "Overall" ? "Overall" : prettyCriterionId(c),
+                          sublabel: b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "",
+                          value: v.value,
+                          range: v.range,
+                          color: CRITERION_COLOR[c] ?? "#9aa0a6",
+                        };
+                      })}
+                      yLabel={yLabel}
+                      yFmt={yFmt}
                       tilt
                     />
                   );
@@ -961,6 +1263,28 @@ function ResultsView({ runs }: { runs: RunSummary[] }) {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-md px-4 py-3">
+      <div className="text-xs uppercase tracking-wider text-[var(--color-text-dim)]">{label}</div>
+      <div className="text-2xl font-bold mt-1" style={valueColor ? { color: valueColor } : undefined}>
+        {value}
+      </div>
+      {sub && <div className="text-xs text-[var(--color-text-dim)] mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -1001,18 +1325,31 @@ function topRoundedPath(x: number, y: number, w: number, h: number, r: number): 
   return `M ${x} ${y + h} L ${x} ${y + rr} Q ${x} ${y} ${x + rr} ${y} L ${x + w - rr} ${y} Q ${x + w} ${y} ${x + w} ${y + rr} L ${x + w} ${y + h} Z`;
 }
 
+type BarDatum = {
+  id: string;
+  label: string;
+  sublabel?: string;
+  value: number | null;
+  color: string;
+  range?: { min: number; max: number };
+  onClick?: () => void;
+};
+
 function SingleBarChart({
   bars,
   yLabel,
+  yFmt,
   tilt,
 }: {
-  bars: { id: string; label: string; sublabel?: string; value: number | null; color: string }[];
+  bars: BarDatum[];
   yLabel: string;
+  yFmt?: (v: number) => string;
   tilt?: boolean;
 }) {
   if (!bars.length) {
     return <p className="text-sm text-[var(--color-text-dim)]">No data.</p>;
   }
+  const fmt = yFmt ?? ((v: number) => v.toFixed(2));
   const W = 820;
   const H = tilt ? 400 : 360;
   const padL = 56;
@@ -1034,7 +1371,7 @@ function SingleBarChart({
             <g key={t}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" />
               <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="12" fill="var(--color-text-dim)">
-                {t.toFixed(2)}
+                {fmt(t)}
               </text>
             </g>
           );
@@ -1053,50 +1390,53 @@ function SingleBarChart({
           const x = padL + i * (barW + barGap);
           const h = d.value !== null ? innerH * d.value : 0;
           const y = padT + innerH - h;
+          const cx = x + barW / 2;
+          const clickable = !!d.onClick;
+          // Whisker positions (only if range exists)
+          const yMin = d.range ? padT + innerH - innerH * d.range.min : 0;
+          const yMax = d.range ? padT + innerH - innerH * d.range.max : 0;
+          const capW = Math.min(10, barW * 0.4);
           return (
-            <g key={d.id}>
+            <g key={d.id} className={clickable ? "cursor-pointer" : undefined} onClick={d.onClick}>
+              {/* Invisible click-target spans the full column for easier hit area */}
+              {clickable && <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />}
               {d.value !== null ? (
                 <>
                   <path d={topRoundedPath(x, y, barW, h, 4)} fill={d.color} />
-                  <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="13" fill="var(--color-text)" fontWeight={600}>
-                    {d.value.toFixed(2)}
+                  {d.range && d.range.min !== d.range.max && (
+                    <>
+                      <line x1={cx} y1={yMin} x2={cx} y2={yMax} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
+                      <line x1={cx - capW / 2} y1={yMin} x2={cx + capW / 2} y2={yMin} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
+                      <line x1={cx - capW / 2} y1={yMax} x2={cx + capW / 2} y2={yMax} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
+                    </>
+                  )}
+                  <text x={cx} y={y - 6} textAnchor="middle" fontSize="13" fill="var(--color-text)" fontWeight={600}>
+                    {fmt(d.value)}
                   </text>
                 </>
               ) : (
-                <text x={x + barW / 2} y={padT + innerH - 6} textAnchor="middle" fontSize="12" fill="var(--color-text-dim)">
+                <text x={cx} y={padT + innerH - 6} textAnchor="middle" fontSize="12" fill="var(--color-text-dim)">
                   n/a
                 </text>
               )}
               {tilt ? (
                 <text
-                  x={x + barW / 2}
+                  x={cx}
                   y={padT + innerH + 14}
                   textAnchor="end"
                   fontSize="12"
                   fill="var(--color-text)"
-                  transform={`rotate(-30 ${x + barW / 2} ${padT + innerH + 14})`}
+                  transform={`rotate(-30 ${cx} ${padT + innerH + 14})`}
                 >
                   {d.label}
                 </text>
               ) : (
                 <>
-                  <text
-                    x={x + barW / 2}
-                    y={padT + innerH + 22}
-                    textAnchor="middle"
-                    fontSize="13"
-                    fill="var(--color-text)"
-                  >
+                  <text x={cx} y={padT + innerH + 22} textAnchor="middle" fontSize="13" fill="var(--color-text)">
                     {d.label}
                   </text>
                   {d.sublabel ? (
-                    <text
-                      x={x + barW / 2}
-                      y={padT + innerH + 40}
-                      textAnchor="middle"
-                      fontSize="11"
-                      fill="var(--color-text-dim)"
-                    >
+                    <text x={cx} y={padT + innerH + 40} textAnchor="middle" fontSize="11" fill="var(--color-text-dim)">
                       {d.sublabel}
                     </text>
                   ) : null}
@@ -1114,11 +1454,17 @@ function GroupedBarChart({
   groups,
   legend,
   yLabel,
+  yFmt,
 }: {
-  groups: { label: string; bars: { id: string; label: string; value: number | null; color: string }[] }[];
+  groups: {
+    label: string;
+    bars: { id: string; label: string; value: number | null; color: string; onClick?: () => void }[];
+  }[];
   legend: { label: string; color: string }[];
   yLabel: string;
+  yFmt?: (v: number) => string;
 }) {
+  const fmt = yFmt ?? ((v: number) => v.toFixed(2));
   if (!groups.length) {
     return <p className="text-sm text-[var(--color-text-dim)]">No data.</p>;
   }
@@ -1155,7 +1501,7 @@ function GroupedBarChart({
             <g key={t}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" />
               <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="12" fill="var(--color-text-dim)">
-                {t.toFixed(2)}
+                {fmt(t)}
               </text>
             </g>
           );
@@ -1178,9 +1524,19 @@ function GroupedBarChart({
                 const x = gx + bi * (barW + innerBarGap);
                 const h = d.value !== null ? innerH * d.value : 0;
                 const y = padT + innerH - h;
-                return d.value !== null ? (
-                  <path key={d.id} d={topRoundedPath(x, y, barW, h, 3)} fill={d.color} />
-                ) : null;
+                const clickable = !!d.onClick;
+                return (
+                  <g
+                    key={d.id}
+                    className={clickable ? "cursor-pointer" : undefined}
+                    onClick={d.onClick}
+                  >
+                    {clickable && <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />}
+                    {d.value !== null ? (
+                      <path d={topRoundedPath(x, y, barW, h, 3)} fill={d.color} />
+                    ) : null}
+                  </g>
+                );
               })}
               <text
                 x={gx + groupW / 2}
