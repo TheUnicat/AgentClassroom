@@ -209,10 +209,27 @@ def print_table(rollout: dict[str, Any], trials: list[dict[str, Any]], n: int) -
 
 
 async def main() -> None:
+    from teachingbench.client_utils import detect_provider
     args = parse_args()
-    api_key = os.environ.get(args.api_key_env)
-    if not api_key:
-        raise SystemExit(f"${args.api_key_env} is not set")
+
+    # Decide which provider's client to build based on judge model name.
+    provider = detect_provider(args.judge_model)
+    if provider == "anthropic":
+        from anthropic import AsyncAnthropic
+        anth_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not anth_key:
+            raise SystemExit("$ANTHROPIC_API_KEY is not set (needed for claude-* judge)")
+        judge_client = AsyncAnthropic(api_key=anth_key)
+        print(f"Using Anthropic judge client for model: {args.judge_model}")
+    else:
+        api_key = os.environ.get(args.api_key_env)
+        if not api_key:
+            raise SystemExit(f"${args.api_key_env} is not set")
+        client_kwargs: dict[str, Any] = {"api_key": api_key}
+        if args.base_url:
+            client_kwargs["base_url"] = args.base_url
+        judge_client = AsyncOpenAI(**client_kwargs)
+        print(f"Using OpenAI judge client for model: {args.judge_model}")
 
     results_path = resolve_results_path(args.run)
     print(f"Loading rollout from: {results_path}")
@@ -223,11 +240,6 @@ async def main() -> None:
     print(f"Task: {rollout['task_id']}  Topic: {rollout['topic']}  "
           f"Rubric: {[c['id'] for c in rollout['rubric']]}  "
           f"Transcript chars: {len(rollout['transcript'])}")
-
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
-    if args.base_url:
-        client_kwargs["base_url"] = args.base_url
-    judge_client = AsyncOpenAI(**client_kwargs)
 
     trials = await run_trials(
         rollout,

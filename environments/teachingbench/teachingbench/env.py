@@ -45,12 +45,17 @@ def load_environment(
     max_turns: int = 32,
     pass_threshold: float = 0.6,
     task_filter: str | None = None,
+    skip_judge: bool = False,
     **kwargs: Any,
 ) -> vf.Environment:
-    """Verifiers entry point. Don't pin the tutor model here — Verifiers passes it into rollout."""
+    """Verifiers entry point. Don't pin the tutor model here — Verifiers passes it into rollout.
+
+    skip_judge=True runs rollouts but short-circuits the judge call to return 0.0 reward.
+    Use this for batch-rollout-then-judge-later workflows.
+    """
     if judge_client is None:
         judge_client = AsyncOpenAI()
-    rubric = TeachingRubric(judge_client=judge_client, judge_model=judge_model)
+    rubric = TeachingRubric(judge_client=judge_client, judge_model=judge_model, skip_judge=skip_judge)
     dataset = build_dataset(task_filter=task_filter)
     return TeachingEnv(
         dataset=dataset,

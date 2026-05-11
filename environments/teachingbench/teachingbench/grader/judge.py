@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 import verifiers as vf
@@ -34,6 +35,7 @@ class TeachingRubric(vf.JudgeRubric):
         judge_client: AsyncOpenAI | None = None,
         judge_model: str = "gpt-5.4",
         judge_sampling_args: dict[str, Any] | None = None,
+        skip_judge: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -43,12 +45,18 @@ class TeachingRubric(vf.JudgeRubric):
             judge_sampling_args=judge_sampling_args or {"temperature": 0.2},
             **kwargs,
         )
+        # If skip_judge is True, we still register the reward func but it short-circuits
+        # to 0.0 without calling the LLM. Use this for batch-rollout mode where you want
+        # to save transcripts now and judge later (e.g. via the OpenAI Batch API).
+        self._skip_judge = skip_judge
+        if skip_judge:
+            os.environ["TEACHINGBENCH_SKIP_JUDGE"] = "1"
         self.add_reward_func(_transcript_score, weight=1.0)
         self.add_metric(_judge_score_count)
 
 
 async def judge_transcript(
-    judge_client: AsyncOpenAI,
+    judge_client: Any,  # AsyncOpenAI or AsyncAnthropic
     judge_model: str,
     *,
     rubric: list[dict[str, Any]],
@@ -57,50 +65,25 @@ async def judge_transcript(
     transcript: str,
     sampling_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run the LLM judge ONCE on a rendered transcript.
+    """Run the LLM judge ONCE on a rendered transcript. Provider-aware: dispatches
+    to OpenAI or Anthropic based on the model name. The caller must pass the
+    matching client type.
 
-    Returns `{scores, rationale, composite, rubric, error?}`. `scores` is a dict
-    keyed by criterion id — values are floats in [0, 1] or `None` (for criteria
-    the judge marked N/A). `composite` is the mean of non-null scores.
-
-    Used by both the env's `_transcript_score` reward function and the
-    judge-reliability test in `teachingbench.reliability_check`. Pure function:
-    no state mutation.
+    Returns `{scores, weights, composite, composite_raw, composite_terms,
+    rationale, rubric, formula, error?}`.
     """
-    judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
-        topic=topic,
-        materials=materials,
-        rubric_text=_format_rubric(rubric),
-        transcript=transcript,
-    )
-    schema = _build_response_schema(rubric)
+    from teachingbench.client_utils import detect_provider
+    provider = detect_provider(judge_model)
+    if provider == "anthropic":
+        parsed_or_err = await _judge_anthropic_call(judge_client, judge_model, rubric, materials, topic, transcript, sampling_args)
+    else:
+        parsed_or_err = await _judge_openai_call(judge_client, judge_model, rubric, materials, topic, transcript, sampling_args)
 
-    args = dict(sampling_args or {})
-    if "max_tokens" in args:
-        args["max_completion_tokens"] = args.pop("max_tokens")
-    args = {k: v for k, v in args.items() if v is not None}
+    if "error" in parsed_or_err:
+        return {"scores": {}, "weights": {}, "rationale": parsed_or_err["error"], "composite": 0.0,
+                "rubric": rubric, "error": parsed_or_err["error"]}
 
-    try:
-        resp = await judge_client.chat.completions.create(
-            model=judge_model,
-            messages=[{"role": "user", "content": judge_prompt}],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "teaching_rubric_score", "strict": True, "schema": schema},
-            },
-            **args,
-        )
-        raw = resp.choices[0].message.content or ""
-    except Exception as e:
-        logger.warning("Transcript judge call failed: %s", e)
-        return {"scores": {}, "rationale": f"judge_error: {e}", "composite": 0.0, "rubric": rubric, "error": str(e)}
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.warning("Judge returned non-JSON despite strict mode: %s — raw=%r", e, raw[:200])
-        return {"scores": {}, "rationale": "parse_error", "composite": 0.0, "rubric": rubric, "error": "parse_error"}
-
+    parsed = parsed_or_err["parsed"]
     raw_scores = parsed.get("scores") or {}
     scores: dict[str, float | None] = {}
     weights: dict[str, float] = {}
@@ -108,12 +91,9 @@ async def judge_transcript(
         cid = c["id"]
         v = raw_scores.get(cid)
         scores[cid] = None if v is None else _clamp01(v)
-        # Fallback to equal weighting if a custom rubric was passed in without
-        # going through _validate_rubric (defensive — shouldn't usually happen).
         w = c.get("weight")
         weights[cid] = float(w) if isinstance(w, (int, float)) else 1.0 / len(rubric)
 
-    # The composite formula lives in `composite.py` — edit there to retune.
     composite_result = compute_composite(scores, weights)
     rationale = str(parsed.get("rationale") or "")
 
@@ -129,6 +109,86 @@ async def judge_transcript(
     }
 
 
+async def _judge_openai_call(
+    judge_client: Any, judge_model: str, rubric: list[dict],
+    materials: str, topic: str, transcript: str, sampling_args: dict | None,
+) -> dict[str, Any]:
+    """OpenAI Chat Completions with strict JSON schema."""
+    judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
+        topic=topic, materials=materials,
+        rubric_text=_format_rubric(rubric), transcript=transcript,
+    )
+    schema = _build_response_schema(rubric)
+    args = dict(sampling_args or {})
+    if "max_tokens" in args:
+        args["max_completion_tokens"] = args.pop("max_tokens")
+    args = {k: v for k, v in args.items() if v is not None}
+
+    try:
+        resp = await judge_client.chat.completions.create(
+            model=judge_model,
+            messages=[{"role": "user", "content": judge_prompt}],
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "teaching_rubric_score", "strict": True, "schema": schema}},
+            **args,
+        )
+        raw = resp.choices[0].message.content or ""
+    except Exception as e:
+        logger.warning("OpenAI judge call failed: %s", e)
+        return {"error": f"judge_error: {e}"}
+
+    try:
+        return {"parsed": json.loads(raw)}
+    except json.JSONDecodeError:
+        return {"error": "parse_error"}
+
+
+async def _judge_anthropic_call(
+    judge_client: Any, judge_model: str, rubric: list[dict],
+    materials: str, topic: str, transcript: str, sampling_args: dict | None,
+) -> dict[str, Any]:
+    """Anthropic Messages with structured output via forced tool use."""
+    judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
+        topic=topic, materials=materials,
+        rubric_text=_format_rubric(rubric), transcript=transcript,
+    )
+    # Build tool with the same JSON schema as OpenAI (Anthropic accepts standard JSON Schema).
+    schema = _build_response_schema(rubric)
+    tool_def = {
+        "name": "report_rubric_scores",
+        "description": "Submit per-criterion rubric scores and an overall rationale.",
+        "input_schema": schema,
+    }
+    args = dict(sampling_args or {})
+    args.pop("max_completion_tokens", None)
+    args.setdefault("max_tokens", 4096)
+    args = {k: v for k, v in args.items() if v is not None}
+
+    try:
+        resp = await judge_client.messages.create(
+            model=judge_model,
+            messages=[{"role": "user", "content": judge_prompt}],
+            tools=[tool_def],
+            tool_choice={"type": "tool", "name": "report_rubric_scores"},
+            **args,
+        )
+    except Exception as e:
+        logger.warning("Anthropic judge call failed: %s", e)
+        return {"error": f"judge_error: {e}"}
+
+    # Find the tool_use block in the response
+    for block in resp.content:
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "report_rubric_scores":
+            tool_input = block.input
+            if isinstance(tool_input, dict):
+                return {"parsed": tool_input}
+            try:
+                return {"parsed": json.loads(tool_input)}
+            except (json.JSONDecodeError, TypeError):
+                return {"error": "parse_error"}
+    return {"error": "no tool_use block in response"}
+
+
 async def _transcript_score(
     judge_client: AsyncOpenAI,
     judge_model: str,
@@ -139,6 +199,15 @@ async def _transcript_score(
     info: Any,
     **_: Any,
 ) -> float:
+    # Skip-judge mode for batch rollouts: just save the transcript with no score.
+    # The rollout is still complete; we'll judge it later via judge_reliability_check
+    # (n=1) or a batch-API judging script.
+    if os.environ.get("TEACHINGBENCH_SKIP_JUDGE") == "1":
+        _stash(state, {"scores": {}, "weights": {}, "composite": 0.0,
+                       "rationale": "skipped", "rubric": [],
+                       "skipped": True})
+        return 0.0
+
     info_dict = _info_dict(info)
     rubric = info_dict.get("rubric")
     if not isinstance(rubric, list) or not rubric:

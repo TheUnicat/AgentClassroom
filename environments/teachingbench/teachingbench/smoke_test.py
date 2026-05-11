@@ -50,19 +50,17 @@ async def main() -> None:
         sys.exit(f"${args.api_key_env} is not set; needed for --live")
 
     from openai import AsyncOpenAI
-    from verifiers.types import ClientConfig
 
+    from teachingbench.client_utils import detect_provider, tutor_client_for
     from teachingbench.env import load_environment
 
     # Env-side LLM (student + grader): raw AsyncOpenAI — our code calls .chat.completions.create directly.
     env_client = AsyncOpenAI(api_key=api_key, base_url=args.base_url) if args.base_url else AsyncOpenAI(api_key=api_key)
 
-    # Tutor client: verifiers wants a ClientConfig (or its own Client wrapper).
-    tutor_client = ClientConfig(
-        client_type="openai_chat_completions",
-        api_key_var=args.api_key_env,
-        api_base_url=args.base_url or "https://api.openai.com/v1",
-    )
+    # Tutor client: provider-aware. claude-* → Anthropic, else OpenAI.
+    tutor_client = tutor_client_for(args.tutor_model)
+    provider = detect_provider(args.tutor_model)
+    print(f"Tutor provider: {provider}")
 
     env = load_environment(
         judge_client=env_client,
