@@ -191,11 +191,14 @@ async def _run_stream(
     judge_model: str,
     api_key: str,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Run the rollout and emit SSE events.
+    """Run the rollout and emit SSE events with **real per-message streaming.**
 
-    NOTE on streaming: verifiers' `evaluate` is monolithic — we don't get per-turn
-    callbacks out of the box. v0.1 runs the rollout to completion, then replays the
-    transcript message-by-message with a small delay so the UI feels live.
+    Strategy: we let `env.evaluate` drive the rollout, but monkey-patch
+    `env.env_response` so each time it's called (between turns) it pushes the
+    newly-arrived messages onto an asyncio.Queue. The SSE generator consumes
+    from that queue and yields `message` events as they land — the user sees
+    the tutor's reply appear as soon as the LLM call returns, then the
+    student's reply, etc., instead of waiting for the whole rollout.
     """
     yield {"event": "info", "data": json.dumps({"status": "starting", "task_id": task_id})}
 
@@ -221,42 +224,88 @@ async def _run_stream(
 
     yield {"event": "info", "data": json.dumps({"status": "running", "tutor_model": tutor_model, "student_model": student_model, "judge_model": judge_model})}
 
+    # --- per-message streaming hook ---
+    queue: asyncio.Queue = asyncio.Queue()
+    last_emitted = [0]  # mutable so the closure can update it
+    original_env_response = env.env_response
+
+    def _emit_new(messages: list[Any]) -> None:
+        new = list(messages)[last_emitted[0]:]
+        for m in _normalize_messages(new):
+            if m["role"] == "system":
+                continue
+            queue.put_nowait(("message", m))
+        last_emitted[0] = len(messages)
+
+    async def patched_env_response(messages, state, **kw):
+        # Emit the tutor's just-landed reply (and the user seed on the first call).
+        _emit_new(messages)
+        result = await original_env_response(messages, state, **kw)
+        # Emit any messages the env appended (student reply, etc.).
+        if result:
+            for m in _normalize_messages(list(result)):
+                if m["role"] != "system":
+                    queue.put_nowait(("message", m))
+            last_emitted[0] += len(result)
+        return result
+
+    env.env_response = patched_env_response
+
+    async def run_eval():
+        try:
+            outputs = await env.evaluate(
+                client=tutor_client,
+                model=tutor_model,
+                num_examples=1,
+                rollouts_per_example=1,
+                state_columns=["judge_breakdown"],
+            )
+            await queue.put(("__done", outputs))
+        except Exception as e:
+            logger.exception("Rollout failed")
+            await queue.put(("__error", str(e)))
+
+    eval_task = asyncio.create_task(run_eval())
+
     try:
-        outputs = await env.evaluate(
-            client=tutor_client,
-            model=tutor_model,
-            num_examples=1,
-            rollouts_per_example=1,
-            state_columns=["judge_breakdown"],
-        )
-    except Exception as e:
-        logger.exception("Rollout failed")
-        yield {"event": "error", "data": json.dumps({"error": str(e)})}
-        return
-
-    rollouts = outputs.get("outputs", []) if isinstance(outputs, dict) else []
-    if not rollouts:
-        yield {"event": "error", "data": json.dumps({"error": "No rollout produced"})}
-        return
-
-    r = rollouts[0]
-    messages = _normalize_messages((r.get("prompt") or []) + (r.get("completion") or []))
-    for m in messages:
-        yield {"event": "message", "data": json.dumps(m)}
-        await asyncio.sleep(0.05)
-
-    breakdown = r.get("judge_breakdown") or {}
-    yield {
-        "event": "done",
-        "data": json.dumps(
-            {
-                "reward": r.get("reward", 0.0),
-                "judge_breakdown": breakdown,
-                "stop_condition": r.get("stop_condition"),
-                "metrics": r.get("metrics"),
-            }
-        ),
-    }
+        while True:
+            etype, payload = await queue.get()
+            if etype == "__error":
+                yield {"event": "error", "data": json.dumps({"error": payload})}
+                return
+            if etype == "__done":
+                outputs = payload
+                rollouts = outputs.get("outputs", []) if isinstance(outputs, dict) else []
+                if not rollouts:
+                    yield {"event": "error", "data": json.dumps({"error": "No rollout produced"})}
+                    return
+                r = rollouts[0]
+                # Flush any messages that arrived after the final env_response call
+                # (e.g. the last tutor turn doesn't trigger env_response on its way out).
+                all_msgs = (r.get("prompt") or []) + (r.get("completion") or [])
+                final_new = all_msgs[last_emitted[0]:]
+                for m in _normalize_messages(final_new):
+                    if m["role"] != "system":
+                        yield {"event": "message", "data": json.dumps(m)}
+                        await asyncio.sleep(0.05)
+                breakdown = r.get("judge_breakdown") or {}
+                yield {
+                    "event": "done",
+                    "data": json.dumps(
+                        {
+                            "reward": r.get("reward", 0.0),
+                            "judge_breakdown": breakdown,
+                            "stop_condition": r.get("stop_condition"),
+                            "metrics": r.get("metrics"),
+                        }
+                    ),
+                }
+                return
+            # ("message", payload)
+            yield {"event": etype, "data": json.dumps(payload)}
+    finally:
+        if not eval_task.done():
+            eval_task.cancel()
 
 
 # --- helpers ---------------------------------------------------------------
