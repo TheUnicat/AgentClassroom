@@ -24,8 +24,11 @@ These overlap in intuition but measure different things. Don't mix them up.
 | v3 (conv+ceil, 8 criteria) | nano | 0.2 | 0.881 | 0.007 |
 | v3 + tightening | gpt-5.4 | 0.2 | 0.631 | 0.024 |
 | v3 + tightening | gpt-5.4 | 0.7 | 0.636 | 0.047 |
+| v3 + tightening | **claude-opus-4-7** | default (no control) | 0.553 | **0.003** |
 
 **Takeaway**: the ceiling mechanism in v3 dampens composite variance dramatically. Per-criterion CV can be higher (good — judge is using the middle of the score range), but the composite is clipped by the lowest-scoring criterion's ceiling, which is itself stable. v3 noise floor is tighter than v1 even with twice as many criteria.
+
+**Opus 4.7 caveat**: the API rejects the `temperature` parameter on this model ("deprecated for this model"). We can't tune sampling temperature for Opus judging. The internal sampling still produces meaningful variance (CV 0.003 on composite at default), so reliability checks still work — just can't crank up temp to surface borderline cases like we did with gpt-5.4.
 
 ### Inter-judge (n=1 each, same transcript, v3 tightened rubric, temp 0.2)
 
@@ -33,11 +36,10 @@ These overlap in intuition but measure different things. Don't mix them up.
 |---|---|---|---|
 | nano | 0.913 | 0.800 | 0.800 |
 | mini | 0.833 | 0.500 | 1.000 |
-| gpt-5.4 | **0.609** | **0.200** | 0.700 |
+| gpt-5.4 | 0.609 | 0.200 | 0.700 |
+| **claude-opus-4-7** | **0.550** | **0.000** | **0.400** |
 
-**Takeaway**: judge capability dominates judge sampling. Same transcript, same rubric, same temperature — gpt-5.4 gives composite 0.30 lower than nano. Nano saturated 6/8 criteria at endpoints (didn't really read the rubric); gpt-5.4 actually applied the anchors. **No amount of rubric tightening fixes this — upgrade the judge.**
-
-The 1.5× composite gap is not noise — it's the right answer (the rollout had wall-of-text + listicle messages averaging ~400 words per turn, which is exactly the `anti_firehose ≤ 0.3` anchor). Nano didn't see it; gpt-5.4 did.
+**Takeaway**: judge capability dominates judge sampling. Same transcript, same rubric — Opus is stricter than gpt-5.4 by ~0.05-0.06 composite. Opus catches the sycophancy ("Yep — exactly", filler openings) and firehose patterns even more aggressively. Across 3 task comparisons, Opus is consistently 0.04-0.06 below gpt-5.4 with the **same relative ranking**. The 1.5× composite gap nano vs Opus is not noise — it's the right answer (the rollout had wall-of-text + listicle messages averaging ~400 words per turn).
 
 ### Inter-temperature (n=8, gpt-5.4, v3 tightened, big_o)
 

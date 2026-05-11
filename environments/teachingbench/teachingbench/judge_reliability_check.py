@@ -209,6 +209,11 @@ def print_table(rollout: dict[str, Any], trials: list[dict[str, Any]], n: int) -
 
 
 async def main() -> None:
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # Quiet down the HTTPX/openai/anthropic chatter, keep our own INFO logs.
+    for noisy in ("httpx", "openai", "anthropic", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     from teachingbench.client_utils import detect_provider
     args = parse_args()
 

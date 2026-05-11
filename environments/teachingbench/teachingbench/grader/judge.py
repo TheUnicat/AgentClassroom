@@ -85,6 +85,14 @@ async def judge_transcript(
 
     parsed = parsed_or_err["parsed"]
     raw_scores = parsed.get("scores") or {}
+    # Defensive: some providers may emit `scores` as a JSON string inside the tool input.
+    if isinstance(raw_scores, str):
+        try:
+            raw_scores = json.loads(raw_scores)
+        except json.JSONDecodeError:
+            raw_scores = {}
+    if not isinstance(raw_scores, dict):
+        raw_scores = {}
     scores: dict[str, float | None] = {}
     weights: dict[str, float] = {}
     for c in rubric:
@@ -147,31 +155,62 @@ async def _judge_anthropic_call(
     judge_client: Any, judge_model: str, rubric: list[dict],
     materials: str, topic: str, transcript: str, sampling_args: dict | None,
 ) -> dict[str, Any]:
-    """Anthropic Messages with structured output via forced tool use."""
-    judge_prompt = TRANSCRIPT_JUDGE_PROMPT.format(
-        topic=topic, materials=materials,
-        rubric_text=_format_rubric(rubric), transcript=transcript,
-    )
-    # Build tool with the same JSON schema as OpenAI (Anthropic accepts standard JSON Schema).
+    """Anthropic Messages with structured output via forced tool use.
+
+    Uses prompt caching on the rubric (system message) and tool definition so
+    repeat judge calls within a 5-min window pay ~10% on the cached portion
+    instead of full price. Saves ~$2 per 228 calls under our setup.
+    """
     schema = _build_response_schema(rubric)
+    # System message carries the static instructions + rubric (cacheable across calls).
+    system_text = (
+        "You are grading a tutoring session against a fixed rubric.\n\n"
+        "Rubric (score each criterion in [0, 1]):\n"
+        f"{_format_rubric(rubric)}\n\n"
+        "Score each criterion independently on its own merits; the composite is computed "
+        "downstream as a weighted combination, so do not try to weight or compensate across "
+        "criteria yourself. The anchors are calibration points, not the only allowed values — "
+        "interpolate freely between them. For each criterion, return either a number in [0, 1] "
+        "OR null (if the criterion doesn't apply to this transcript — see each criterion's "
+        "description for when null is appropriate). Submit your scores via the "
+        "`report_rubric_scores` tool."
+    )
+    # User message carries the variable parts (different per call).
+    user_text = (
+        f"Topic: {topic}\n\n"
+        f"Materials the student had:\n<materials>\n{materials}\n</materials>\n\n"
+        f"Transcript:\n<transcript>\n{transcript}\n</transcript>"
+    )
+    # Tool definition (cacheable across calls).
     tool_def = {
         "name": "report_rubric_scores",
         "description": "Submit per-criterion rubric scores and an overall rationale.",
         "input_schema": schema,
+        "cache_control": {"type": "ephemeral"},
     }
     args = dict(sampling_args or {})
     args.pop("max_completion_tokens", None)
+    args.pop("temperature", None)  # Opus 4.7 deprecates this
     args.setdefault("max_tokens", 4096)
     args = {k: v for k, v in args.items() if v is not None}
 
     try:
         resp = await judge_client.messages.create(
             model=judge_model,
-            messages=[{"role": "user", "content": judge_prompt}],
+            system=[{"type": "text", "text": system_text,
+                     "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_text}],
             tools=[tool_def],
             tool_choice={"type": "tool", "name": "report_rubric_scores"},
             **args,
         )
+        # Log cache stats once per call so we can verify caching is working.
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            cw = getattr(usage, "cache_creation_input_tokens", 0)
+            cr = getattr(usage, "cache_read_input_tokens", 0)
+            it = getattr(usage, "input_tokens", 0)
+            logger.info("Opus cache: writes=%s reads=%s non-cached_input=%s", cw, cr, it)
     except Exception as e:
         logger.warning("Anthropic judge call failed: %s", e)
         return {"error": f"judge_error: {e}"}
