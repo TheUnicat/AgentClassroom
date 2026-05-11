@@ -1,8 +1,8 @@
-# AgentClassroom v0.1 Report
+# AgentClassroom v0.1 Environment Card
 
 *Mostly human-edited*
 ## 1. Overview
-We built a benchmark for LLMs teaching. Each task is a short conversation where the evaluated LLM plays the tutor and another AI simulates the student, with strict instructions guiding student behavior. A judge LLM then scores the transcript against a rubric evaluating factual accuracy, relevance, firehosing (long, textbook-like responses; very common AI teaching failure mode), and sycophancy. A detailed rubric is in Section 2.
+We built a benchmark for LLMs teaching. Each task is a short conversation where the evaluated LLM plays the tutor and another AI simulates the student. A judge LLM then scores the transcript against a rubric evaluating factual accuracy, relevance, firehosing (long, textbook-like responses), and sycophancy. A detailed rubric is in Section 2.
 
 We tried to measure a different axis than capability benchmarks: a model can know the material and still teach it badly. Overall teaching quality across the whole task corpus is similar across models but well below the ceiling, suggesting that capability is not the constraint for teaching performance. Per-criterion performance (e.g. on clarity) varied widely, showing that models have meaningfully different strength profiles on teaching.
 

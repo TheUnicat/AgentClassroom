@@ -31,6 +31,12 @@ environments/*/runs/
 environments/*/outputs/
 environments/*/.cache/
 
+# Dashboard deploy artifacts: seed_runs/ is populated by deploy_to_hf_space.sh
+# into the *Space repo*, not here. README.md is tracked so the Dockerfile's
+# COPY resolves; everything else is generated.
+dashboard/backend/seed_runs/*
+!dashboard/backend/seed_runs/README.md
+
 # Wheel test scratch
 /tmp/wheel_test/
 

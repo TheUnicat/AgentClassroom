@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>AgentClassroom Pitch</title>
+  <style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+  <style type="text/css">table {
+border-collapse: collapse;
+margin: 1em 0;
+}
+table, th, td {
+border: 1px solid #000;
+}
+th, td {
+padding: 6px 10px;
+vertical-align: top;
+}
+th {
+background-color: #f0f0f0;
+font-weight: bold;
+}
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">AgentClassroom Pitch</h1>
+</header>
+<h1 id="agentclassroom">AgentClassroom</h1>
+<p><em>See <code>baseline_report.md</code> for the long
+version.</em></p>
+<p><strong>Capability ≠ teaching.</strong></p>
+<p>Capability benchmarks (used to) crown GPT-5.4. This teaching eval
+shows it loses to GPT-5.4-nano.</p>
+<p>Models know the material. They’ve read all the textbooks. So when
+teaching, they open with “Great question!”, write a textbook chapter
+about the topic that covers everything the student could possibly want
+to learn up to grad school, and end with “want me to cover W, X, Y, Z
+next?”</p>
+<p>Students bounce.</p>
+<h2 id="what-we-built">What we built</h2>
+<ul>
+<li>57 Math and CS teaching tasks; 15 with uploaded reference materials
+(textbook pages, lecture notes, handwritten homework)</li>
+<li>LLM-LLM rollouts. LLM teacher, simulated student, and a judge.</li>
+<li>An 8-criterion rubric that penalizes common LLM teaching failure
+patterns. The equation for the overall score captures non-linear
+relationships and is tunable after judging.</li>
+<li>Tested 4 models from multiple providers (OpenAI + Anthropic) for a
+total of 228 rollouts.</li>
+<li>Modular. Drop in your model. Drop in your rubric.</li>
+</ul>
+<h2 id="results-n228-full-dataset">Results (n=228, full dataset)</h2>
+<p><em>Table 1: Criterion and composite scores by model (mean across 57
+tasks); Student simulated by GPT-5.4-mini in all trials</em></p>
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #000">
+<thead>
+<tr>
+<th style="border:1px solid #000;padding:6px;background:#f0f0f0;border:1px solid #000;padding:6px;background:#f0f0f0">Criterion</th>
+<th style="border:1px solid #000;padding:6px;background:#f0f0f0;border:1px solid #000;padding:6px;background:#f0f0f0">GPT-5.4-nano</th>
+<th style="border:1px solid #000;padding:6px;background:#f0f0f0;border:1px solid #000;padding:6px;background:#f0f0f0">GPT-5.4-mini</th>
+<th style="border:1px solid #000;padding:6px;background:#f0f0f0;border:1px solid #000;padding:6px;background:#f0f0f0">GPT-5.4</th>
+<th style="border:1px solid #000;padding:6px;background:#f0f0f0;border:1px solid #000;padding:6px;background:#f0f0f0"><strong>Opus 4.7</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Answers the question</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.89</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.92</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.93</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.95</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Factual correctness</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.91</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.94</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.96</strong></td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.93</td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Engages with materials</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.68</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.67</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.65</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.76</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">No firehosing</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.29</strong></td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.22</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.15</strong> ←</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.27</td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Matches student’s level</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.78</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.81</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.77</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.85</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Scaffolds</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.55</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.53</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.47</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.58</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Clarity</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.87</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.88</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.88</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.90</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">No sycophancy</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.70</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.87</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.90</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.60</strong> ←</td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>Composite</strong></td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.635</strong></td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.618</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">0.596</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px"><strong>0.635</strong></td>
+</tr>
+<tr>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">Cost per rollout</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">~$0.005</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">~$0.015</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">~$0.10</td>
+<td style="border:1px solid #000;padding:6px;border:1px solid #000;padding:6px">~$0.22</td>
+</tr>
+</tbody>
+</table>
+<p>The cheapest and most expensive models are tied.</p>
+<p>Individual criteria tell a different story: 0.14 gap between best and
+worst on firehosing (GPT-5.4 vs GPT-5.4-nano), and 0.30 on sycophancy
+(Opus 4.7 vs GPT-5.4) — both statistically significant. The eval rewards
+teaching, not raw capability.</p>
+<h2 id="failure-modes">Failure modes</h2>
+<p><strong>All models dump too much information.</strong> Average
+firehose score across all models is 0.23. The best (GPT-5.4-nano) tops
+out at 0.29. GPT-5.4 is the worst at 0.15: on
+<code>halting_problem</code> it answered one conceptual question with
+five long sections and an unsolicited “want me to also cover Rice’s
+theorem?” invitation. I would like to note that the pattern is systemic
+and has been around since GPT-3.5.</p>
+<p><strong>Opus 4.7 would be clearly the best teacher if not for
+sycophancy.</strong> ~30% of Opus 4.7 replies open with “Great
+question!”, “Totally fair”, “What a thoughtful observation.” Score on
+sycophancy: <strong>0.60</strong> (worst in corpus). Without the
+criterion, Opus 4.7 would be unambiguously first.</p>
+<p><strong>Capability can reduce performance.</strong> On a
+missing-comma SQL syntax error, Opus 4.7 identified the fix correctly,
+then second-guessed its own explanation mid-sentence: <em>“actually, the
+real parse issue is…”</em> and never recovered, achieving an overall
+score of <strong>0.36</strong> on a task where all cheaper models scored
+0.91+. Capability can be bad for simple tasks.</p>
+<h2 id="the-signal-is-real">The signal is real</h2>
+<ul>
+<li>Same transcript, judge replayed 5 times: composite CV
+<strong>0.003</strong>.</li>
+<li>Same task, full rollout repeated 5 times: composite CV
+<strong>0.010</strong>.</li>
+<li>Different tasks, same tutor: composite range <strong>0.48 to
+0.96</strong> (the eval discriminates).</li>
+<li>Different judge models: tutor ranking holds; absolute scores shift.
+Smaller judges saturate. We use Opus 4.7.</li>
+</ul>
+<h2 id="caveats">Caveats</h2>
+<p>LLM-simulated students aren’t real students and miss the messy way
+real users phrase things even with our prompting. Real students would
+give a cleaner signal and verify the benchmark. Potential improvements
+with real students:</p>
+<ul>
+<li><strong>Auto-generated quizzes</strong> at the end of each rollout
+to measure what students actually learned.</li>
+<li><strong>Student self-rating</strong>. Ask real users to rate clarity
+/ confusion / usefulness of conversations</li>
+<li><strong>LLM judging of actual conversation transcripts
+too</strong></li>
+</ul>
+<h2 id="market">Market</h2>
+<p>AgentClassroom is one of the only benchmarks built for teaching
+quality. Potential markets for Deep24:</p>
+<p><strong>AI tutoring companies</strong> (Khan’s Khanmigo, Synthesis,
+MagicSchool, Numerade). They pick a model and Deep24 tells them
+GPT-5.4-mini gives ~97% of Opus 4.7’s teaching quality at 7% the
+cost.</p>
+<p><strong>Frontier labs doing RLHF on teaching.</strong> They need a
+teaching reward signal and human ratings are slow and expensive.
+Single-turn teaching benchmarks that focus on factual accuracy measure
+nothing useful.</p>
+<h2 id="teaching-is-low-hanging-fruit">Teaching is low-hanging
+fruit</h2>
+<p>Models already know the material. Content criteria — <em>answering
+the question</em> and <em>factual correctness</em> — are nearly
+saturated across the lineup.</p>
+<p>The problem is presentation, especially avoiding firehosing and
+sycophancy. These are <em>not</em> capability problems. A targeted RL
+pass against this rubric can flip them in a single training run.
+AgentClassroom makes that training possible.</p>
+<h2 id="notes">Notes</h2>
+<ul>
+<li>I didn’t implement image generation because it’s expensive and
+rarely helpful. Code execution and making graphs may be more helpful,
+but this will require human students</li>
+</ul>
+<h2 id="todos">TODOs</h2>
+<ul>
+<li>RL training loop. fine-tune a weak base model to teach well.</li>
+</ul>
+</body>
+</html>

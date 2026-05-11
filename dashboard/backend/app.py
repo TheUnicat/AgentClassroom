@@ -44,13 +44,18 @@ app.add_middleware(
 
 # --- config ----------------------------------------------------------------
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_DIR = Path(
-    os.environ.get(
-        "TEACHINGBENCH_RUNS_DIR",
-        str(REPO_ROOT / "environments" / "teachingbench" / "outputs" / "runs"),
-    )
-)
+def _default_runs_dir() -> Path:
+    # Local repo layout: dashboard/backend/app.py → repo root is parents[2].
+    # In the Docker image app.py lives at /app/app.py with no parents[2]; the
+    # TEACHINGBENCH_RUNS_DIR env var is set in the Dockerfile so this path is
+    # never used in production. Fall back to /data/runs if depth check fails.
+    parents = Path(__file__).resolve().parents
+    if len(parents) > 2:
+        return parents[2] / "environments" / "teachingbench" / "outputs" / "runs"
+    return Path("/data/runs")
+
+
+RUNS_DIR = Path(os.environ.get("TEACHINGBENCH_RUNS_DIR", str(_default_runs_dir())))
 DEFAULT_TUTOR_MODEL = os.environ.get("DEFAULT_TUTOR_MODEL", "gpt-5.4-nano")
 DEFAULT_STUDENT_MODEL = os.environ.get("DEFAULT_STUDENT_MODEL", "gpt-5.4-mini")
 DEFAULT_JUDGE_MODEL = os.environ.get("DEFAULT_JUDGE_MODEL", "gpt-5.4-nano")

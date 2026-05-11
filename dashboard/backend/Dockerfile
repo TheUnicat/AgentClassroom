@@ -34,5 +34,12 @@ COPY dashboard/backend/app.py /app/app.py
 RUN mkdir -p /data/runs
 ENV TEACHINGBENCH_RUNS_DIR=/data/runs
 
+# Seed the runs dir with bundled example rollouts so the dashboard isn't empty
+# on first load. These get baked into the image; if HF persistent storage is
+# enabled it will mount over /data and hide these, in which case copy them once
+# from /app/seed_runs into the persistent volume.
+COPY dashboard/backend/seed_runs/ /app/seed_runs/
+RUN cp -R /app/seed_runs/. /data/runs/ 2>/dev/null || true
+
 EXPOSE 7860
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
