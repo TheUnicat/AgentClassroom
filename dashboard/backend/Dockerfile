@@ -29,17 +29,16 @@ RUN pip install -e /app/teachingbench-env
 # Then the FastAPI app.
 COPY dashboard/backend/app.py /app/app.py
 
-# Make a writable runs dir on HF persistent storage. Override at deploy time
-# via the TEACHINGBENCH_RUNS_DIR env var if you want a different mount point.
-RUN mkdir -p /data/runs
-ENV TEACHINGBENCH_RUNS_DIR=/data/runs
+# Runs directory lives at /app/runs (inside the image layer), NOT /data/runs —
+# HF Spaces' persistent storage mounts at /data and would hide image-baked
+# content there. /app/runs is ephemeral on container restart, but that's fine:
+# seed rollouts get re-baked from the image, and fresh rollouts are demo-only.
+RUN mkdir -p /app/runs
+ENV TEACHINGBENCH_RUNS_DIR=/app/runs
 
 # Seed the runs dir with bundled example rollouts so the dashboard isn't empty
-# on first load. These get baked into the image; if HF persistent storage is
-# enabled it will mount over /data and hide these, in which case copy them once
-# from /app/seed_runs into the persistent volume.
-COPY dashboard/backend/seed_runs/ /app/seed_runs/
-RUN cp -R /app/seed_runs/. /data/runs/ 2>/dev/null || true
+# on first load.
+COPY dashboard/backend/seed_runs/ /app/runs/
 
 EXPOSE 7860
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]

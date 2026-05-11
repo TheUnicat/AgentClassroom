@@ -100,7 +100,7 @@ function firstSentence(text: string): string {
 }
 
 export default function Page() {
-  const [view, setView] = useState<View>("inspect");
+  const [view, setView] = useState<View>("results");
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -696,7 +696,7 @@ function ScorePanel({
     <div className="space-y-2">
       <div className="flex items-baseline gap-3 flex-wrap">
         <span className="text-xs uppercase tracking-wider text-[var(--color-text-dim)]">
-          Overall
+          score@1
         </span>
         {composite !== undefined && composite !== null ? (
           <ScoreBadge value={composite} />
@@ -736,7 +736,7 @@ function ScorePanel({
   );
 }
 
-// --- Results view (aggregate bar chart with criterion tabs) ---------------
+// --- Results view (two bar charts with tabs) ------------------------------
 
 const CRITERION_ORDER = [
   "Overall",
@@ -750,109 +750,250 @@ const CRITERION_ORDER = [
   "no_excessive_validation",
 ];
 
+// Distinct color per criterion (used in the per-criterion chart's single-model view).
+const CRITERION_COLOR: Record<string, string> = {
+  "Overall":                "#94a3b8",
+  "answers_the_question":   "#ef4444",
+  "factual_correctness":    "#f97316",
+  "anti_firehose":          "#eab308",
+  "meeting_student_level":  "#84cc16",
+  "clarity":                "#06b6d4",
+  "bridging":               "#3b82f6",
+  "scaffolding":            "#8b5cf6",
+  "no_excessive_validation":"#ec4899",
+};
+
+type Bucket = { sum: number; n: number; nullN: number };
+
+function avgOf(b: Bucket | undefined): number | null {
+  return b && b.n > 0 ? b.sum / b.n : null;
+}
+
 function ResultsView({ runs }: { runs: RunSummary[] }) {
   const [criterion, setCriterion] = useState<string>("Overall");
+  const [chart2Model, setChart2Model] = useState<string>("All Models");
 
-  // Compute the set of criteria actually present in the data.
+  // Criteria present in the data (deterministic order).
   const presentCriteria = new Set<string>();
   for (const r of runs) {
     if (r.scores) for (const k of Object.keys(r.scores)) presentCriteria.add(k);
   }
-  const tabs = ["Overall", ...CRITERION_ORDER.slice(1).filter((k) => presentCriteria.has(k))];
+  const criteria = CRITERION_ORDER.filter((k) => k === "Overall" || presentCriteria.has(k));
 
-  // Aggregate by model.
-  const byModel: Record<string, { sum: number; n: number; nullN: number }> = {};
+  // Aggregate per (model, criterion). criterion="Overall" uses r.composite.
+  const cell: Record<string, Record<string, Bucket>> = {};
+  function get(m: string, c: string): Bucket {
+    cell[m] ??= {};
+    return (cell[m][c] ??= { sum: 0, n: 0, nullN: 0 });
+  }
   for (const r of runs) {
-    let value: number | null | undefined;
-    if (criterion === "Overall") {
-      value = r.composite;
-    } else if (r.scores && criterion in r.scores) {
-      value = r.scores[criterion];
-    } else {
-      value = undefined;
+    const m = r.model;
+    // Overall
+    {
+      const b = get(m, "Overall");
+      const v = r.composite;
+      if (v === null) b.nullN += 1;
+      else if (typeof v === "number") {
+        b.sum += v;
+        b.n += 1;
+      }
     }
-    const bucket = (byModel[r.model] ??= { sum: 0, n: 0, nullN: 0 });
-    if (value === null) bucket.nullN += 1;
-    else if (typeof value === "number") {
-      bucket.sum += value;
-      bucket.n += 1;
+    // Per criterion
+    if (r.scores) {
+      for (const [k, v] of Object.entries(r.scores)) {
+        const b = get(m, k);
+        if (v === null) b.nullN += 1;
+        else if (typeof v === "number") {
+          b.sum += v;
+          b.n += 1;
+        }
+      }
     }
   }
 
-  // Stable order: by TEACHER_MODELS list, then any extras alphabetically.
-  const known = TEACHER_MODELS.map((m) => m.id);
-  const extras = Object.keys(byModel).filter((m) => !known.includes(m)).sort();
-  const ordered = [...known, ...extras].filter((m) => byModel[m]);
+  // Stable model order: TEACHER_MODELS list, then any extras alphabetically.
+  const knownIds = TEACHER_MODELS.map((m) => m.id);
+  const extras = Object.keys(cell).filter((m) => !knownIds.includes(m)).sort();
+  const models = [...knownIds, ...extras].filter((m) => cell[m]);
 
-  const data = ordered.map((m) => {
-    const b = byModel[m];
-    return {
-      id: m,
-      display: displayModel(m),
-      color: MODEL_COLOR[m] ?? "#9aa0a6",
-      avg: b.n > 0 ? b.sum / b.n : null,
-      n: b.n,
-      nullN: b.nullN,
-    };
-  });
+  // === Chart 1: per-model bars for one criterion ===
+  const chart1Data = models.map((m) => ({
+    id: m,
+    display: displayModel(m),
+    color: MODEL_COLOR[m] ?? "#9aa0a6",
+    value: avgOf(cell[m]?.[criterion]),
+    n: cell[m]?.[criterion]?.n ?? 0,
+    nullN: cell[m]?.[criterion]?.nullN ?? 0,
+  }));
+
+  // === Chart 2: per-criterion bars for one (or all) model ===
+  const chart2Tabs = ["All Models", ...models.map((m) => displayModel(m))];
+  const totalRuns = runs.length;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 px-8 py-6 overflow-y-auto">
       <div>
-        <h2 className="text-xl font-semibold mb-1">Results across {runs.length} saved rollouts</h2>
+        <h2 className="text-xl font-semibold mb-1">
+          Results across {totalRuns} rollouts
+        </h2>
         <p className="text-sm text-[var(--color-text-dim)]">
-          Per-model averages, taken across all tasks. Switch the tab to view a specific criterion.
+          mean@1 — per-rollout judge score, averaged. (One rollout per task per model.)
         </p>
       </div>
-      <div className="mt-4 flex gap-1 flex-wrap border-b border-[var(--color-border)]">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setCriterion(t)}
-            className={`px-3 py-2 text-sm border-b-2 -mb-px ${
-              criterion === t
-                ? "border-[var(--color-accent)] text-[var(--color-text)] font-medium"
-                : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            {t === "Overall" ? "Overall" : prettyCriterionId(t)}
-          </button>
-        ))}
-      </div>
-      <div className="mt-6">
-        <BarChart data={data} criterionLabel={criterion === "Overall" ? "Overall score" : prettyCriterionId(criterion)} />
-      </div>
+
+      {totalRuns === 0 ? (
+        <p className="mt-6 text-[var(--color-text-dim)]">
+          Loading saved rollouts… If this stays empty, the backend has no rollouts.
+        </p>
+      ) : (
+        <>
+          {/* Chart 1: mean@1 by model, criterion picker */}
+          <section className="mt-6">
+            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-2">
+              <h3 className="text-base font-semibold">
+                mean@1 by model · <span className="text-[var(--color-text-dim)] font-normal">{criterion === "Overall" ? "Overall" : prettyCriterionId(criterion)}</span>
+              </h3>
+            </div>
+            <CriterionTabs
+              tabs={criteria}
+              active={criterion}
+              onSelect={setCriterion}
+              renderLabel={(t) => (t === "Overall" ? "Overall" : prettyCriterionId(t))}
+            />
+            <div className="mt-4">
+              <SingleBarChart
+                bars={chart1Data.map((d) => ({
+                  id: d.id,
+                  label: d.display,
+                  sublabel: `n = ${d.n}${d.nullN ? `  (${d.nullN} n/a)` : ""}`,
+                  value: d.value,
+                  color: d.color,
+                }))}
+                yLabel="mean@1"
+              />
+            </div>
+          </section>
+
+          {/* Chart 2: mean@1 by criterion, model picker */}
+          <section className="mt-10">
+            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-2">
+              <h3 className="text-base font-semibold">
+                mean@1 by criterion · <span className="text-[var(--color-text-dim)] font-normal">{chart2Model}</span>
+              </h3>
+            </div>
+            <CriterionTabs
+              tabs={chart2Tabs}
+              active={chart2Model}
+              onSelect={setChart2Model}
+              renderLabel={(t) => t}
+            />
+            <div className="mt-4">
+              {chart2Model === "All Models" ? (
+                <GroupedBarChart
+                  groups={criteria.map((c) => ({
+                    label: c === "Overall" ? "Overall" : prettyCriterionId(c),
+                    bars: models.map((m) => ({
+                      id: m,
+                      label: displayModel(m),
+                      value: avgOf(cell[m]?.[c]),
+                      color: MODEL_COLOR[m] ?? "#9aa0a6",
+                    })),
+                  }))}
+                  legend={models.map((m) => ({ label: displayModel(m), color: MODEL_COLOR[m] ?? "#9aa0a6" }))}
+                  yLabel="mean@1"
+                />
+              ) : (
+                (() => {
+                  const m = models.find((x) => displayModel(x) === chart2Model)!;
+                  return (
+                    <SingleBarChart
+                      bars={criteria.map((c) => ({
+                        id: c,
+                        label: c === "Overall" ? "Overall" : prettyCriterionId(c),
+                        sublabel: (() => {
+                          const b = cell[m]?.[c];
+                          return b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "";
+                        })(),
+                        value: avgOf(cell[m]?.[c]),
+                        color: CRITERION_COLOR[c] ?? "#9aa0a6",
+                      }))}
+                      yLabel="mean@1"
+                      tilt
+                    />
+                  );
+                })()
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
 
-function BarChart({
-  data,
-  criterionLabel,
+function CriterionTabs({
+  tabs,
+  active,
+  onSelect,
+  renderLabel,
 }: {
-  data: { id: string; display: string; color: string; avg: number | null; n: number; nullN: number }[];
-  criterionLabel: string;
+  tabs: string[];
+  active: string;
+  onSelect: (t: string) => void;
+  renderLabel: (t: string) => string;
 }) {
-  if (!data.length) {
-    return <p className="text-sm text-[var(--color-text-dim)]">No data for this criterion.</p>;
+  return (
+    <div className="flex gap-1 flex-wrap border-b border-[var(--color-border)]">
+      {tabs.map((t) => (
+        <button
+          key={t}
+          onClick={() => onSelect(t)}
+          className={`px-3 py-2 text-sm border-b-2 -mb-px ${
+            active === t
+              ? "border-[var(--color-accent)] text-[var(--color-text)] font-medium"
+              : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
+          }`}
+        >
+          {renderLabel(t)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Rounded-top rect built as an SVG path (flat bottom, rounded top corners).
+function topRoundedPath(x: number, y: number, w: number, h: number, r: number): string {
+  const rr = Math.max(0, Math.min(r, w / 2, h));
+  return `M ${x} ${y + h} L ${x} ${y + rr} Q ${x} ${y} ${x + rr} ${y} L ${x + w - rr} ${y} Q ${x + w} ${y} ${x + w} ${y + rr} L ${x + w} ${y + h} Z`;
+}
+
+function SingleBarChart({
+  bars,
+  yLabel,
+  tilt,
+}: {
+  bars: { id: string; label: string; sublabel?: string; value: number | null; color: string }[];
+  yLabel: string;
+  tilt?: boolean;
+}) {
+  if (!bars.length) {
+    return <p className="text-sm text-[var(--color-text-dim)]">No data.</p>;
   }
-  const W = 780;
-  const H = 360;
+  const W = 820;
+  const H = tilt ? 400 : 360;
   const padL = 56;
   const padR = 24;
   const padT = 16;
-  const padB = 72;
+  const padB = tilt ? 110 : 72;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const barGap = 32;
-  const barW = (innerW - barGap * (data.length - 1)) / data.length;
-
+  const barGap = Math.max(12, Math.floor(innerW / (bars.length * 4)));
+  const barW = (innerW - barGap * (bars.length - 1)) / bars.length;
   const yTicks = [0, 0.25, 0.5, 0.75, 1.0];
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-        {/* Y-axis grid + labels */}
         {yTicks.map((t) => {
           const y = padT + innerH - innerH * t;
           return (
@@ -864,7 +1005,6 @@ function BarChart({
             </g>
           );
         })}
-        {/* Y label */}
         <text
           x={14}
           y={padT + innerH / 2}
@@ -873,20 +1013,19 @@ function BarChart({
           transform={`rotate(-90 14 ${padT + innerH / 2})`}
           textAnchor="middle"
         >
-          {criterionLabel}
+          {yLabel}
         </text>
-        {/* Bars */}
-        {data.map((d, i) => {
+        {bars.map((d, i) => {
           const x = padL + i * (barW + barGap);
-          const h = d.avg !== null ? innerH * d.avg : 0;
+          const h = d.value !== null ? innerH * d.value : 0;
           const y = padT + innerH - h;
           return (
             <g key={d.id}>
-              {d.avg !== null ? (
+              {d.value !== null ? (
                 <>
-                  <rect x={x} y={y} width={barW} height={h} fill={d.color} rx={3} />
+                  <path d={topRoundedPath(x, y, barW, h, 4)} fill={d.color} />
                   <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="13" fill="var(--color-text)" fontWeight={600}>
-                    {d.avg.toFixed(2)}
+                    {d.value.toFixed(2)}
                   </text>
                 </>
               ) : (
@@ -894,23 +1033,130 @@ function BarChart({
                   n/a
                 </text>
               )}
-              <text
-                x={x + barW / 2}
-                y={padT + innerH + 22}
-                textAnchor="middle"
-                fontSize="13"
-                fill="var(--color-text)"
-              >
-                {d.display}
+              {tilt ? (
+                <text
+                  x={x + barW / 2}
+                  y={padT + innerH + 14}
+                  textAnchor="end"
+                  fontSize="12"
+                  fill="var(--color-text)"
+                  transform={`rotate(-30 ${x + barW / 2} ${padT + innerH + 14})`}
+                >
+                  {d.label}
+                </text>
+              ) : (
+                <>
+                  <text
+                    x={x + barW / 2}
+                    y={padT + innerH + 22}
+                    textAnchor="middle"
+                    fontSize="13"
+                    fill="var(--color-text)"
+                  >
+                    {d.label}
+                  </text>
+                  {d.sublabel ? (
+                    <text
+                      x={x + barW / 2}
+                      y={padT + innerH + 40}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fill="var(--color-text-dim)"
+                    >
+                      {d.sublabel}
+                    </text>
+                  ) : null}
+                </>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function GroupedBarChart({
+  groups,
+  legend,
+  yLabel,
+}: {
+  groups: { label: string; bars: { id: string; label: string; value: number | null; color: string }[] }[];
+  legend: { label: string; color: string }[];
+  yLabel: string;
+}) {
+  if (!groups.length) {
+    return <p className="text-sm text-[var(--color-text-dim)]">No data.</p>;
+  }
+  const W = 900;
+  const H = 420;
+  const padL = 56;
+  const padR = 24;
+  const padT = 16;
+  const padB = 110;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const barsPerGroup = groups[0].bars.length;
+  const groupGap = 22;
+  const innerBarGap = 3;
+  const groupW = (innerW - groupGap * (groups.length - 1)) / groups.length;
+  const barW = (groupW - innerBarGap * (barsPerGroup - 1)) / barsPerGroup;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1.0];
+
+  return (
+    <div className="max-w-5xl">
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-2 text-[var(--color-text-dim)]">
+        {legend.map((l) => (
+          <span key={l.label} className="inline-flex items-center gap-1.5">
+            <span style={{ background: l.color, width: 10, height: 10, borderRadius: 2, display: "inline-block" }} />
+            {l.label}
+          </span>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+        {yTicks.map((t) => {
+          const y = padT + innerH - innerH * t;
+          return (
+            <g key={t}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--color-border)" />
+              <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="12" fill="var(--color-text-dim)">
+                {t.toFixed(2)}
               </text>
+            </g>
+          );
+        })}
+        <text
+          x={14}
+          y={padT + innerH / 2}
+          fontSize="12"
+          fill="var(--color-text-dim)"
+          transform={`rotate(-90 14 ${padT + innerH / 2})`}
+          textAnchor="middle"
+        >
+          {yLabel}
+        </text>
+        {groups.map((g, gi) => {
+          const gx = padL + gi * (groupW + groupGap);
+          return (
+            <g key={g.label}>
+              {g.bars.map((d, bi) => {
+                const x = gx + bi * (barW + innerBarGap);
+                const h = d.value !== null ? innerH * d.value : 0;
+                const y = padT + innerH - h;
+                return d.value !== null ? (
+                  <path key={d.id} d={topRoundedPath(x, y, barW, h, 3)} fill={d.color} />
+                ) : null;
+              })}
               <text
-                x={x + barW / 2}
-                y={padT + innerH + 40}
-                textAnchor="middle"
-                fontSize="11"
-                fill="var(--color-text-dim)"
+                x={gx + groupW / 2}
+                y={padT + innerH + 14}
+                textAnchor="end"
+                fontSize="12"
+                fill="var(--color-text)"
+                transform={`rotate(-30 ${gx + groupW / 2} ${padT + innerH + 14})`}
               >
-                n = {d.n}{d.nullN ? `  (${d.nullN} n/a)` : ""}
+                {g.label}
               </text>
             </g>
           );
