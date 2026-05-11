@@ -90,14 +90,19 @@ function capitalize(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-// First-sentence summary for the rubric description toggle.
-function firstSentence(text: string): string {
-  const s = text.trim();
-  // Find the first ". " or "? " or "! " that's not inside an abbreviation.
-  const m = s.match(/^.*?[.?!](?=\s|$)/);
-  if (m) return m[0];
-  return s.length > 140 ? s.slice(0, 140) + "…" : s;
-}
+// Hand-crafted one-line briefs for the rubric. Falls back to the full description
+// if a criterion id isn't here. The "show full description" toggle reveals the
+// verbatim system description from the backend.
+const CRITERION_BRIEF: Record<string, string> = {
+  answers_the_question:    "Did the teacher actually answer what the student asked?",
+  factual_correctness:     "Are the technical claims correct, and not subtly misleading?",
+  bridging:                "Did the teacher use the materials or context the student shared?",
+  anti_firehose:           "Did the teacher stay concise and focused, instead of info-dumping?",
+  meeting_student_level:   "Did the teacher pitch the explanation at the student's actual level?",
+  scaffolding:             "Did the teacher build up step by step, instead of jumping ahead?",
+  clarity:                 "Is the writing clear and logically organized?",
+  no_excessive_validation: "Did the teacher avoid sycophantic praise (\"great question!\")?",
+};
 
 export default function Page() {
   const [view, setView] = useState<View>("results");
@@ -147,6 +152,28 @@ export default function Page() {
     if (mode === "viewing-saved") return;
     setActiveRubric(selectedTask?.rubric ?? null);
   }, [selectedTask, mode]);
+
+  // Auto-load a matching saved rollout when the user picks (or initially lands on)
+  // a task — so the right pane isn't empty until they hit "Run new rollout."
+  // Prefer a run matching the picked teacher; otherwise fall back to newest for the task.
+  useEffect(() => {
+    if (!selectedTaskId || !runs.length) return;
+    if (mode === "running" || mode === "done") return; // don't disturb a fresh rollout
+    const candidates = runs.filter((r) => r.task_id === selectedTaskId);
+    if (!candidates.length) {
+      // No saved rollout for this task — clear stale right-pane content.
+      setMessages([]);
+      setBreakdown(null);
+      setSelectedRunId(null);
+      setActiveTeacher(null);
+      setActiveJudge(null);
+      return;
+    }
+    const byTeacher = candidates.find((r) => r.model === pickedTeacher);
+    const pick = byTeacher ?? candidates[0]; // backend returns newest-first
+    if (pick.id !== selectedRunId) loadSavedRun(pick.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTaskId, runs.length]);
 
   // Polling fallback (see AGENTS.md — do not remove).
   useEffect(() => {
@@ -257,11 +284,10 @@ export default function Page() {
   return (
     <main className="h-screen flex flex-col">
       <header className="border-b border-[var(--color-border)] px-6 py-3 flex items-center gap-6">
-        <h1 className="text-3xl font-bold tracking-tight">TeachingBench</h1>
-        <span className="text-sm text-[var(--color-text-dim)]">Agent teaching eval</span>
-        <nav className="ml-auto flex items-center gap-2">
-          <ViewTab name="Inspect Run" active={view === "inspect"} onClick={() => setView("inspect")} />
+        <h1 className="text-3xl font-bold tracking-tight">AgentClassroom</h1>
+        <nav className="ml-auto flex items-center gap-1.5">
           <ViewTab name="Results" active={view === "results"} onClick={() => setView("results")} />
+          <ViewTab name="Demo" active={view === "inspect"} onClick={() => setView("inspect")} />
           <ViewTab name="v0.1 Full Report" active={view === "report"} onClick={() => setView("report")} />
         </nav>
       </header>
@@ -322,21 +348,25 @@ export default function Page() {
                   <div className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
                     Student Question
                   </div>
-                  <pre className="text-sm whitespace-pre-wrap bg-[var(--color-panel)] border border-[var(--color-border)] rounded p-2.5 leading-relaxed">{selectedTask.seed_question}</pre>
+                  <div className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded p-2.5">
+                    <Markdown content={selectedTask.seed_question} />
+                  </div>
                 </div>
               )}
-              <div className="mt-4 flex items-center gap-2">
-                <select
-                  className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded px-2 py-2 text-sm"
-                  value={pickedTeacher}
-                  onChange={(e) => setPickedTeacher(e.target.value)}
-                  disabled={mode === "running"}
-                  title="Teacher model"
-                >
-                  {TEACHER_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>{m.display}</option>
-                  ))}
-                </select>
+              <div className="mt-4 flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-1.5 text-sm text-[var(--color-text-dim)]">
+                  Teacher:
+                  <select
+                    className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded px-2 py-2 text-sm text-[var(--color-text)]"
+                    value={pickedTeacher}
+                    onChange={(e) => setPickedTeacher(e.target.value)}
+                    disabled={mode === "running"}
+                  >
+                    {TEACHER_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>{m.display}</option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   onClick={runFresh}
                   disabled={!selectedTaskId || mode === "running"}
@@ -398,10 +428,10 @@ function ViewTab({ name, active, onClick }: { name: string; active: boolean; onC
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded text-sm font-medium border ${
+      className={`px-4 py-2 rounded-md text-base font-semibold transition-colors ${
         active
-          ? "border-[var(--color-accent)] bg-[var(--color-panel-hover)] text-[var(--color-text)]"
-          : "border-transparent text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
+          ? "bg-[var(--color-accent)] text-black"
+          : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)] hover:text-[var(--color-text)]"
       }`}
     >
       {name}
@@ -462,9 +492,11 @@ function RubricCard({
   score: number | null | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const full = c.description ?? "";
-  const short = firstSentence(full);
-  const hasMore = full.length > short.length;
+  const full = (c.description ?? "").trim();
+  const brief = CRITERION_BRIEF[c.id] ?? full;
+  // If we don't have a hand-crafted brief and the description is short, there's
+  // nothing to expand to — only show the toggle when expanding actually adds info.
+  const hasMore = brief !== full && full.length > 0;
   return (
     <article className="border border-[var(--color-border)] bg-[var(--color-panel)] rounded-md p-3">
       <header className="flex items-baseline gap-2 mb-1.5">
@@ -472,17 +504,19 @@ function RubricCard({
         {scored && <ScoreBadge value={score === undefined ? null : score} />}
       </header>
       <div className="text-xs text-[var(--color-text-dim)] leading-relaxed mb-2">
-        <div className="md-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {expanded ? full : short}
-          </ReactMarkdown>
-        </div>
+        {expanded ? (
+          <div className="md-content">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{full}</ReactMarkdown>
+          </div>
+        ) : (
+          <p>{brief}</p>
+        )}
         {hasMore && (
           <button
             onClick={() => setExpanded((v) => !v)}
             className="mt-1 text-[var(--color-accent)] hover:underline text-xs"
           >
-            {expanded ? "show less" : "show more"}
+            {expanded ? "hide full description" : "show full description"}
           </button>
         )}
       </div>
