@@ -1408,8 +1408,8 @@ function SingleBarChart({
   const yTicks = [0, 0.25, 0.5, 0.75, 1.0];
 
   return (
-    <div className="max-w-4xl">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <div className="w-full max-w-4xl mx-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="block w-full h-auto">
         {yTicks.map((t) => {
           const y = padT + innerH - innerH * t;
           return (
@@ -1527,7 +1527,7 @@ function GroupedBarChart({
   const yTicks = [0, 0.25, 0.5, 0.75, 1.0];
 
   return (
-    <div className="max-w-5xl">
+    <div className="w-full max-w-5xl mx-auto">
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-2 text-[var(--color-text-dim)]">
         {legend.map((l) => (
@@ -1537,7 +1537,7 @@ function GroupedBarChart({
           </span>
         ))}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="block w-full h-auto">
         {yTicks.map((t) => {
           const y = padT + innerH - innerH * t;
           return (
