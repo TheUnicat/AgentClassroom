@@ -41,8 +41,15 @@ function displayModel(id: string | null | undefined): string {
 // backend's currently-configured judge as a best-effort attribution.
 const DEFAULT_JUDGE_DISPLAY = "Opus 4.7";
 
-// Convert "factual_correctness" → "Factual Correctness", "answers_the_question" → "Answers the Question".
+// Hand-overrides for criterion display names. Anything not in this map falls
+// back to the generic Title-Case-with-spaces formatter.
+const CRITERION_DISPLAY: Record<string, string> = {
+  anti_firehose:           "Anti-Firehose",
+  no_excessive_validation: "Anti-Sycophancy",
+};
+
 function prettyCriterionId(id: string): string {
+  if (CRITERION_DISPLAY[id]) return CRITERION_DISPLAY[id];
   const words = id.split("_");
   return words
     .map((w, i) => {
@@ -178,9 +185,10 @@ export default function Page() {
     return true;
   });
 
-  // Used by chart bars: drill into Demo view, prefilter to a specific teacher model.
+  // Used by chart bars (specific model) AND the "go to Demo" link (modelId = "").
+  // Empty model → no filter, just switch views.
   function drillToModel(modelId: string) {
-    setFilterModel(modelId);
+    setFilterModel(modelId || null);
     setFilterScoreBand(null);
     setFilterQuery("");
     setView("inspect");
@@ -1013,6 +1021,28 @@ function passAtOf(b: Bucket | undefined, tau: number): number | null {
   return pass / b.n;
 }
 
+function sdOf(values: number[], mean: number): number {
+  if (values.length < 2) return 0;
+  const sumSq = values.reduce((s, x) => s + (x - mean) ** 2, 0);
+  return Math.sqrt(sumSq / values.length);
+}
+
+// Build a hover-tooltip string with summary stats for a bar.
+function statsTooltip(label: string, b: Bucket | undefined, mean: number | null): string {
+  if (!b || b.n === 0) return `${label}\nno data`;
+  const sd = mean !== null ? sdOf(b.values, mean) : 0;
+  const range = b.max - b.min;
+  return (
+    `${label}\n` +
+    `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}\n` +
+    `mean = ${mean !== null ? mean.toFixed(3) : "—"}\n` +
+    `sd   = ${sd.toFixed(3)}\n` +
+    `min  = ${b.min.toFixed(3)}\n` +
+    `max  = ${b.max.toFixed(3)}\n` +
+    `range = ${range.toFixed(3)}`
+  );
+}
+
 type Metric = "mean@1" | "pass";
 
 function ResultsView({
@@ -1050,16 +1080,13 @@ function ResultsView({
   const extras = Object.keys(cell).filter((m) => !knownIds.includes(m)).sort();
   const models = [...knownIds, ...extras].filter((m) => cell[m]);
 
-  // Metric helper: returns {value, range?}. Range only meaningful for mean@1.
-  function val(b: Bucket | undefined): { value: number | null; range?: { min: number; max: number } } {
-    if (!b || b.n === 0) return { value: null };
-    if (metric === "mean@1") {
-      return { value: b.sum / b.n, range: { min: b.min, max: b.max } };
-    }
-    return { value: passAtOf(b, tau) };
+  // Metric helper: returns the displayed bar value.
+  function val(b: Bucket | undefined): number | null {
+    if (!b || b.n === 0) return null;
+    return metric === "mean@1" ? b.sum / b.n : passAtOf(b, tau);
   }
 
-  const yLabel = metric === "mean@1" ? "mean@1" : `Pass@τ (τ = ${tau.toFixed(2)})`;
+  const yLabel = metric === "mean@1" ? "Mean@1" : `Pass@τ (τ = ${tau.toFixed(2)})`;
   const yFmt = (v: number) =>
     metric === "mean@1" ? v.toFixed(2) : `${Math.round(v * 100)}%`;
 
@@ -1086,52 +1113,61 @@ function ResultsView({
   const totalRuns = runs.length;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 px-8 py-6 overflow-y-auto">
-      <div className="flex items-baseline justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold mb-1">Results across {totalRuns} rollouts</h2>
-          <p className="text-sm text-[var(--color-text-dim)]">
-            mean@1 = one rollout per task per model, averaged. Pass@τ = % of rollouts at or above τ.
-          </p>
+    <div className="flex-1 min-h-0 px-8 py-6 overflow-y-auto">
+     <div className="max-w-5xl mx-auto text-center">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Results across {totalRuns} rollouts</h2>
+        <p className="text-sm text-[var(--color-text-dim)]">
+          Mean@1 = average score over all tasks. Pass@τ = % of rollouts at or above τ.
+        </p>
+        <p className="text-sm text-[var(--color-text-dim)] mt-1">
+          Go to{" "}
+          <button
+            onClick={() => onDrillToModel("")}
+            className="text-[var(--color-accent)] underline underline-offset-2 hover:opacity-80"
+          >
+            Demo
+          </button>{" "}
+          to inspect any of the past rollouts or run a new one.
+        </p>
+      </div>
+      <div className="flex items-center justify-center gap-3 mt-5">
+        <div className="inline-flex rounded-md border border-[var(--color-border)] overflow-hidden">
+          <button
+            onClick={() => setMetric("mean@1")}
+            className={`px-3 py-1.5 text-sm ${
+              metric === "mean@1"
+                ? "bg-[var(--color-accent)] text-black font-semibold"
+                : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
+            }`}
+          >
+            Mean@1
+          </button>
+          <button
+            onClick={() => setMetric("pass")}
+            className={`px-3 py-1.5 text-sm border-l border-[var(--color-border)] ${
+              metric === "pass"
+                ? "bg-[var(--color-accent)] text-black font-semibold"
+                : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
+            }`}
+          >
+            Pass@τ
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border border-[var(--color-border)] overflow-hidden">
-            <button
-              onClick={() => setMetric("mean@1")}
-              className={`px-3 py-1.5 text-sm ${
-                metric === "mean@1"
-                  ? "bg-[var(--color-accent)] text-black font-semibold"
-                  : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
-              }`}
-            >
-              mean@1
-            </button>
-            <button
-              onClick={() => setMetric("pass")}
-              className={`px-3 py-1.5 text-sm border-l border-[var(--color-border)] ${
-                metric === "pass"
-                  ? "bg-[var(--color-accent)] text-black font-semibold"
-                  : "text-[var(--color-text-dim)] hover:bg-[var(--color-panel-hover)]"
-              }`}
-            >
-              Pass@τ
-            </button>
-          </div>
-          {metric === "pass" && (
-            <label className="flex items-center gap-2 text-sm text-[var(--color-text-dim)]">
-              τ = <span className="font-mono text-[var(--color-text)]">{tau.toFixed(2)}</span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={tau}
-                onChange={(e) => setTau(parseFloat(e.target.value))}
-                className="w-32 accent-[var(--color-accent)]"
-              />
-            </label>
-          )}
-        </div>
+        {metric === "pass" && (
+          <label className="flex items-center gap-2 text-sm text-[var(--color-text-dim)]">
+            τ = <span className="font-mono text-[var(--color-text)]">{tau.toFixed(2)}</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={tau}
+              onChange={(e) => setTau(parseFloat(e.target.value))}
+              className="w-32 accent-[var(--color-accent)]"
+            />
+          </label>
+        )}
       </div>
 
       {totalRuns === 0 ? (
@@ -1144,7 +1180,7 @@ function ResultsView({
           <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard label="Rollouts" value={String(totalRuns)} sub={`${models.length} models`} />
             <KpiCard
-              label="mean@1 (all)"
+              label="Mean@1 (all)"
               value={overallMean !== null ? overallMean.toFixed(2) : "—"}
               sub="across all rollouts"
             />
@@ -1180,18 +1216,20 @@ function ResultsView({
               onSelect={setCriterion}
               renderLabel={(t) => (t === "Overall" ? "Overall" : prettyCriterionId(t))}
             />
-            <div className="mt-4">
+            <div className="mt-4 flex justify-center">
               <SingleBarChart
                 bars={models.map((m) => {
-                  const v = val(cell[m]?.[criterion]);
                   const b = cell[m]?.[criterion];
+                  const mean = meanOf(b);
+                  const v = val(b);
+                  const label = displayModel(m) + " · " + (criterion === "Overall" ? "Overall" : prettyCriterionId(criterion));
                   return {
                     id: m,
                     label: displayModel(m),
                     sublabel: b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "",
-                    value: v.value,
-                    range: v.range,
+                    value: v,
                     color: MODEL_COLOR[m] ?? "#9aa0a6",
+                    tooltip: statsTooltip(label, b, mean),
                     onClick: () => onDrillToModel(m),
                   };
                 })}
@@ -1215,18 +1253,22 @@ function ResultsView({
               onSelect={setChart2Model}
               renderLabel={(t) => t}
             />
-            <div className="mt-4">
+            <div className="mt-4 flex justify-center">
               {chart2Model === "All Models" ? (
                 <GroupedBarChart
                   groups={criteria.map((c) => ({
                     label: c === "Overall" ? "Overall" : prettyCriterionId(c),
                     bars: models.map((m) => {
-                      const v = val(cell[m]?.[c]);
+                      const b = cell[m]?.[c];
+                      const mean = meanOf(b);
+                      const v = val(b);
+                      const cl = c === "Overall" ? "Overall" : prettyCriterionId(c);
                       return {
                         id: m,
                         label: displayModel(m),
-                        value: v.value,
+                        value: v,
                         color: MODEL_COLOR[m] ?? "#9aa0a6",
+                        tooltip: statsTooltip(`${displayModel(m)} · ${cl}`, b, mean),
                         onClick: () => onDrillToModel(m),
                       };
                     }),
@@ -1241,15 +1283,17 @@ function ResultsView({
                   return (
                     <SingleBarChart
                       bars={criteria.map((c) => {
-                        const v = val(cell[m]?.[c]);
                         const b = cell[m]?.[c];
+                        const mean = meanOf(b);
+                        const v = val(b);
+                        const cl = c === "Overall" ? "Overall" : prettyCriterionId(c);
                         return {
                           id: c,
-                          label: c === "Overall" ? "Overall" : prettyCriterionId(c),
+                          label: cl,
                           sublabel: b ? `n = ${b.n}${b.nullN ? `  (${b.nullN} n/a)` : ""}` : "",
-                          value: v.value,
-                          range: v.range,
+                          value: v,
                           color: CRITERION_COLOR[c] ?? "#9aa0a6",
+                          tooltip: statsTooltip(`${displayModel(m)} · ${cl}`, b, mean),
                         };
                       })}
                       yLabel={yLabel}
@@ -1263,6 +1307,7 @@ function ResultsView({
           </section>
         </>
       )}
+     </div>
     </div>
   );
 }
@@ -1331,7 +1376,7 @@ type BarDatum = {
   sublabel?: string;
   value: number | null;
   color: string;
-  range?: { min: number; max: number };
+  tooltip?: string; // shown via native SVG <title> on hover
   onClick?: () => void;
 };
 
@@ -1392,24 +1437,15 @@ function SingleBarChart({
           const y = padT + innerH - h;
           const cx = x + barW / 2;
           const clickable = !!d.onClick;
-          // Whisker positions (only if range exists)
-          const yMin = d.range ? padT + innerH - innerH * d.range.min : 0;
-          const yMax = d.range ? padT + innerH - innerH * d.range.max : 0;
-          const capW = Math.min(10, barW * 0.4);
           return (
             <g key={d.id} className={clickable ? "cursor-pointer" : undefined} onClick={d.onClick}>
-              {/* Invisible click-target spans the full column for easier hit area */}
-              {clickable && <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />}
+              {/* Native SVG tooltip with summary stats on hover */}
+              {d.tooltip && <title>{d.tooltip}</title>}
+              {/* Invisible click-target spans the full column for easier hover/hit area */}
+              <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />
               {d.value !== null ? (
                 <>
                   <path d={topRoundedPath(x, y, barW, h, 4)} fill={d.color} />
-                  {d.range && d.range.min !== d.range.max && (
-                    <>
-                      <line x1={cx} y1={yMin} x2={cx} y2={yMax} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
-                      <line x1={cx - capW / 2} y1={yMin} x2={cx + capW / 2} y2={yMin} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
-                      <line x1={cx - capW / 2} y1={yMax} x2={cx + capW / 2} y2={yMax} stroke="rgba(255,255,255,0.7)" strokeWidth={1.4} />
-                    </>
-                  )}
                   <text x={cx} y={y - 6} textAnchor="middle" fontSize="13" fill="var(--color-text)" fontWeight={600}>
                     {fmt(d.value)}
                   </text>
@@ -1458,7 +1494,14 @@ function GroupedBarChart({
 }: {
   groups: {
     label: string;
-    bars: { id: string; label: string; value: number | null; color: string; onClick?: () => void }[];
+    bars: {
+      id: string;
+      label: string;
+      value: number | null;
+      color: string;
+      tooltip?: string;
+      onClick?: () => void;
+    }[];
   }[];
   legend: { label: string; color: string }[];
   yLabel: string;
@@ -1531,7 +1574,8 @@ function GroupedBarChart({
                     className={clickable ? "cursor-pointer" : undefined}
                     onClick={d.onClick}
                   >
-                    {clickable && <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />}
+                    {d.tooltip && <title>{d.tooltip}</title>}
+                    <rect x={x} y={padT} width={barW} height={innerH} fill="transparent" />
                     {d.value !== null ? (
                       <path d={topRoundedPath(x, y, barW, h, 3)} fill={d.color} />
                     ) : null}

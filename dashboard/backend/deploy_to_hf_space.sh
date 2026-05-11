@@ -116,7 +116,12 @@ git commit -m "$MSG"
 
 REPO_ID=$(git remote get-url origin | sed 's|.*spaces/||;s|\.git$||')
 echo "→ uploading to https://huggingface.co/spaces/$REPO_ID"
-hf upload "$REPO_ID" "$SPACE_DIR" . --repo-type=space --commit-message "$MSG"
+# --delete on the seed_runs subtree mirrors it: anything we removed locally
+# also gets removed on the Space. Without this, `hf upload` is additive and
+# stale rollouts pile up across deploys.
+hf upload "$REPO_ID" "$SPACE_DIR" . --repo-type=space \
+  --delete 'dashboard/backend/seed_runs/*' \
+  --commit-message "$MSG"
 
 echo "✓ uploaded. HF will rebuild the Space; watch logs at:"
 echo "  https://huggingface.co/spaces/$REPO_ID"
