@@ -17,6 +17,8 @@ html, body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px; /* up from default 14-ish; ~+1pt all over */
+  line-height: 1.5;
 }
 
 * {

@@ -54,27 +54,28 @@ rsync -a --delete \
   "$REPO_ROOT/environments/teachingbench/" "$SPACE_DIR/environments/teachingbench/"
 
 # 4. Seed rollouts. The dashboard reads RUNS_DIR/<run>/results.jsonl one level deep.
-#    Standalones already have that shape; batched-dir subdirs need flattening with the
-#    model name moved to the end so the dashboard parses model correctly from run_id.
+#    All 228 viewable rollouts live one level deep inside the 4 "batched_*" dirs.
+#    Flatten them so the dashboard sees them as top-level runs, and rename so the
+#    last '__'-separated chunk is the teacher model (the dashboard's parser convention).
 SRC_RUNS="$REPO_ROOT/environments/teachingbench/outputs/runs"
 SEED_RUNS="$SPACE_DIR/dashboard/backend/seed_runs"
 rm -rf "$SEED_RUNS"
 mkdir -p "$SEED_RUNS"
 
-# 4a. Standalone runs (results.jsonl at root of <SRC_RUNS>/<run>/).
-for d in "$SRC_RUNS"/*/; do
-  if [[ -f "$d/results.jsonl" ]]; then
-    cp -R "$d" "$SEED_RUNS/$(basename "$d")"
-  fi
-done
-
-# 4b. Flatten chosen batched dirs. Source: <SRC_RUNS>/<batch>/<model>__<subject>__<task>/
-#     Destination: <SEED_RUNS>/<batch>__<subject>__<task>__<model>/
-for batch in batched_gpt54_round1_v2 batched_opus_round1_text; do
+# Flatten the 4 batched dirs that make up the 228-rollout v0.1 baseline. We do NOT
+# include the loose standalones at SRC_RUNS root — those are exploration/dev runs,
+# not part of the published baseline.
+for batch in \
+    batched_gpt54_round1_v2 \
+    batched_opus_round1_text \
+    batched_opus_round1_materials \
+    batch_realtime_round1; do
   for sub in "$SRC_RUNS/$batch"/*/; do
     [[ -f "$sub/results.jsonl" ]] || continue
     name=$(basename "$sub")
-    # Split on the first '__': everything before is model, after is subject__task.
+    # Source dirs are named <model>__<subject>__<task>; rewrite to
+    # <batch>__<subject>__<task>__<model> so the dashboard's _model_from_run_id
+    # (rsplit on "__") picks the teacher model.
     model="${name%%__*}"
     rest="${name#*__}"
     new="${batch}__${rest}__${model}"
