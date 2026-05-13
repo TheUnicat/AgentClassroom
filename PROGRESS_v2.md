@@ -20,27 +20,36 @@ Step-by-step checklist for `PLAN_v2.md`. Mark `[x]` when done.
 
 ---
 
-## Phase 2 — Implement judge functions
+## Phase 2 — Implement judge functions  ✅
+
+Shared helpers: `functions/deterministic/_utils.py` (text/code/tokenization),
+`functions/llm/_call.py` (provider-aware single-criterion call),
+`functions/llm/_transcript.py` (Tutor:/Student: rendering).
 
 **Deterministic, first pass:**
-- [ ] `sycophancy_regex`
-- [ ] `anti_firehose_length`
-- [ ] `first_message_length`
-- [ ] `echo_score`
-- [ ] `seed_question_recall`
-- [ ] `turn_asymmetry`
-- [ ] `listicle_density`
-- [ ] `question_density`
+- [x] `sycophancy_regex`        — phrase-list match → fraction of clean teacher turns
+- [x] `anti_firehose_length`    — mean teacher words/turn vs 150/500 band
+- [x] `first_message_length`    — turn-1 word count vs 200/700 band
+- [x] `echo_score`              — teacher↔prior-student bigram overlap, stopword-filtered
+- [x] `seed_question_recall`    — content-token recall in final teacher message
+- [x] `turn_asymmetry`          — teacher/student word ratio, tent around 3.5x
+- [x] `listicle_density`        — bullet/header/bold-label markers per word
+- [x] `question_density`        — `?` per teacher turn, tent at 1.0
 
 **Deterministic, second pass:**
-- [ ] `flesch_kincaid`
-- [ ] `code_validity`
-- [ ] `concept_velocity`
-- [ ] `type_token_ratio`
+- [x] `flesch_kincaid`          — readability vs difficulty band
+- [x] `code_validity`           — Python `compile()` on fenced code (None for non-CS)
+- [x] `concept_velocity`        — CoV of novel content tokens across turns
+- [x] `type_token_ratio`        — MATTR over 100-word windows, tent at 0.45
 
-**LLM (refactored):**
-- [ ] Split each current rubric criterion into its own `functions/llm/*.py`
-- [ ] New: `reward_hack_detector`
+**LLM (refactored from `DEFAULT_RUBRIC`, one file per criterion):**
+- [x] `answers_the_question` · `factual_correctness` · `bridging` · `anti_firehose` · `meeting_student_level` · `scaffolding` · `clarity` · `no_excessive_validation`
+- [x] New: `reward_hack_detector` (meta-check used as composite cap in `v2_hybrid`)
+
+**Smoke tests:** every deterministic module has an inline `__main__` block
+exercising good/bad cases. All 12 + 9 import cleanly. Live integration
+test: 1× Anthropic + 1× OpenAI call confirms provider dispatch works
+end-to-end.
 
 ---
 
