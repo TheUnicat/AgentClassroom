@@ -70,7 +70,8 @@ for batch in \
     batched_opus_round1_text \
     batched_opus_round1_materials \
     batch_realtime_round1 \
-    experiment_optimized_round1; do
+    experiment_optimized_round1 \
+    scaleup_optimized_round1; do
   for sub in "$SRC_RUNS/$batch"/*/; do
     [[ -f "$sub/results.jsonl" ]] || continue
     name=$(basename "$sub")
