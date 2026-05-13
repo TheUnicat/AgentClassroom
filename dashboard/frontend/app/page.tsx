@@ -916,8 +916,8 @@ function MessageBubble({ message, turn }: { message: Message; turn?: TrajectoryT
       <div className="text-xs uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
         {label}
       </div>
-      <Markdown content={message.content} />
       {role === "assistant" && turn && <TurnScorePanel turn={turn} />}
+      <Markdown content={message.content} />
     </div>
   );
 }
