@@ -32,6 +32,7 @@ export interface RunSummary {
   composite: number;
   scores: Record<string, number | null> | null;
   rationale?: string | null;
+  prompt_name?: string;  // "default" | "socratic" | "concise" | "optimized" | "materials_first" | "custom"
 }
 
 export interface Message {

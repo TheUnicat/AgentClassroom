@@ -126,6 +126,10 @@ def list_runs() -> list[dict[str, Any]]:
                 "composite": rec.get("reward", 0.0),
                 "scores": breakdown.get("scores") if isinstance(breakdown, dict) else None,
                 "rationale": breakdown.get("rationale") if isinstance(breakdown, dict) else None,
+                # Teacher system prompt name (registry key) — "default" means
+                # the empty/no-conditioning prompt. Frontend uses this to
+                # group bars in the prompt-comparison chart.
+                "prompt_name": info.get("tutor_system_prompt_name") or "default",
             }
         )
     return runs

@@ -1394,6 +1394,16 @@ function ResultsView({
         </p>
       ) : (
         <>
+          {/* Teacher-prompt experiment — placed first since it's the most
+              actionable comparison on the page right now. */}
+          <PromptComparisonSection
+            runs={runs}
+            metric={metric}
+            tau={tau}
+            yLabel={yLabel}
+            yFmt={yFmt}
+          />
+
           {/* Headline KPI cards */}
           <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard label="Rollouts" value={String(totalRuns)} sub={`${models.length} models`} />
@@ -1597,6 +1607,114 @@ type BarDatum = {
   tooltip?: string; // shown via native SVG <title> on hover
   onClick?: () => void;
 };
+
+// ---- Teacher-prompt comparison ------------------------------------------
+// Top section of the Results page. Filters rollouts to those participating
+// in the prompt experiment (anything with a non-empty `prompt_name`, OR
+// matching the `experiment_optimized__` id prefix). Bars: 4 prompts per
+// teacher, grouped by teacher. Respects the page's Mean@1 / Pass@τ toggle.
+
+const PROMPT_ORDER: string[] = ["default", "socratic", "concise", "optimized"];
+
+const PROMPT_DISPLAY: Record<string, string> = {
+  default: "Default",
+  socratic: "Socratic",
+  concise: "Concise",
+  optimized: "Optimized",
+  materials_first: "Materials-first",
+  custom: "Custom",
+};
+
+// Distinct from MODEL_COLOR (which is used for model legend elsewhere).
+const PROMPT_COLOR: Record<string, string> = {
+  default: "#9aa0a6",       // grey
+  socratic: "#a78bfa",      // purple
+  concise: "#fbbf24",       // amber
+  optimized: "#14b8a6",     // teal
+  materials_first: "#f472b6", // pink
+  custom: "#94a3b8",        // slate
+};
+
+function _isExperiment(r: RunSummary): boolean {
+  // Treat any run with an explicit non-default prompt name as part of the
+  // experiment view. The 60-rollout teacher-prompt batch was named with
+  // an `experiment_optimized__` prefix, so we ALSO include its default-
+  // prompt rollouts (which would otherwise be filtered out).
+  if (r.id.startsWith("experiment_optimized__")) return true;
+  if (r.prompt_name && r.prompt_name !== "default") return true;
+  return false;
+}
+
+function PromptComparisonSection({
+  runs,
+  metric,
+  tau,
+  yLabel,
+  yFmt,
+}: {
+  runs: RunSummary[];
+  metric: Metric;
+  tau: number;
+  yLabel: string;
+  yFmt: (v: number) => string;
+}) {
+  // Filter to experiment rollouts so prompts have apples-to-apples task coverage.
+  const exp = runs.filter(_isExperiment);
+  if (exp.length === 0) return null;
+
+  // Aggregate (model, prompt) buckets.
+  const cell: Record<string, Record<string, Bucket>> = {};
+  for (const r of exp) {
+    const p = r.prompt_name || "default";
+    cell[r.model] ??= {};
+    cell[r.model][p] ??= newBucket();
+    addToBucket(cell[r.model][p], r.composite);
+  }
+  const models = TEACHER_MODELS.map((m) => m.id).filter((m) => cell[m]);
+  const prompts = PROMPT_ORDER.filter((p) =>
+    Object.values(cell).some((row) => row[p] && row[p].n > 0)
+  );
+
+  const groups = models.map((m) => ({
+    label: displayModel(m),
+    bars: prompts.map((p) => {
+      const b = cell[m]?.[p];
+      const mean = meanOf(b);
+      const v = b ? (metric === "mean@1" ? mean : passAtOf(b, tau)) : null;
+      return {
+        id: `${m}::${p}`,
+        label: PROMPT_DISPLAY[p] ?? p,
+        value: v,
+        color: PROMPT_COLOR[p] ?? "#9aa0a6",
+        tooltip: statsTooltip(`${displayModel(m)} · ${PROMPT_DISPLAY[p] ?? p}`, b, mean),
+      };
+    }),
+  }));
+  const legend = prompts.map((p) => ({
+    label: PROMPT_DISPLAY[p] ?? p,
+    color: PROMPT_COLOR[p] ?? "#9aa0a6",
+  }));
+
+  const n = exp.length;
+  return (
+    <section className="mt-6 text-left">
+      <h3 className="text-base font-semibold text-center">
+        Teacher-prompt experiment ·{" "}
+        <span className="text-[var(--color-text-dim)] font-normal">{yLabel}</span>
+      </h3>
+      <p className="mt-1 mx-auto max-w-3xl text-sm text-[var(--color-text-dim)] text-center">
+        Same set of {Math.max(1, Math.round(n / (prompts.length * models.length || 1)))} tasks rolled
+        out with each of {prompts.length} teacher system prompts across {models.length} teachers
+        (n = {n} total). Bars show each prompt's effect per teacher; hover for
+        sample size + range. Models that can't internalize a dense rule-list
+        (e.g. nano) often do worse with the directive `Optimized` prompt.
+      </p>
+      <div className="mt-4 flex justify-center">
+        <GroupedBarChart groups={groups} legend={legend} yLabel={yLabel} yFmt={yFmt} />
+      </div>
+    </section>
+  );
+}
 
 function SingleBarChart({
   bars,
