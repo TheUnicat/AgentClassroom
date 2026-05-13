@@ -111,6 +111,54 @@ def code_blocks(text: str) -> list[tuple[str, str]]:
     return [(m.group(1) or "", m.group(2) or "") for m in _FENCE_RE.finditer(text)]
 
 
+# --- LaTeX helpers ---------------------------------------------------------
+#
+# Detection covers the LaTeX forms that actually show up in our rollouts:
+#   display:  \[ ... \]   $$ ... $$   \begin{equation}/{align}/{gather}/...
+#   inline:   \( ... \)
+# Single-$ delimiters are NOT matched — too ambiguous with prose dollar
+# signs ("the API costs $5"), and our rollouts use \( / \[ consistently.
+
+_LATEX_DISPLAY_RE = re.compile(
+    r"\\\[[\s\S]*?\\\]"
+    r"|\$\$[\s\S]*?\$\$"
+    r"|\\begin\{(?:equation|align|gather|displaymath|eqnarray|multline)\*?\}"
+    r"[\s\S]*?"
+    r"\\end\{(?:equation|align|gather|displaymath|eqnarray|multline)\*?\}",
+    re.MULTILINE,
+)
+_LATEX_INLINE_RE = re.compile(r"\\\([\s\S]*?\\\)", re.MULTILINE)
+
+
+def latex_display_blocks(text: str) -> list[str]:
+    """Return the raw substring of each display-style equation block.
+    Useful for treating each block as a structural marker."""
+    return _LATEX_DISPLAY_RE.findall(text)
+
+
+def strip_latex(text: str) -> str:
+    """Strip display + inline LaTeX so prose-oriented measures (Flesch-
+    Kincaid, type/token ratio, concept_velocity) aren't fooled by
+    short symbol tokens (`x`, `n`, `frac`, `lim`) bringing the apparent
+    readability down. Replaces matched LaTeX with a single space."""
+    text = _LATEX_DISPLAY_RE.sub(" ", text)
+    text = _LATEX_INLINE_RE.sub(" ", text)
+    return text
+
+
+def latex_density(text: str) -> float:
+    """Fraction of `text` characters inside LaTeX expressions, in [0, 1].
+    Counts both display and inline forms."""
+    if not text:
+        return 0.0
+    latex_chars = 0
+    for m in _LATEX_DISPLAY_RE.finditer(text):
+        latex_chars += m.end() - m.start()
+    for m in _LATEX_INLINE_RE.finditer(text):
+        latex_chars += m.end() - m.start()
+    return min(1.0, latex_chars / len(text))
+
+
 # --- saturation / clamps ---------------------------------------------------
 
 

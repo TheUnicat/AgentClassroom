@@ -1,4 +1,4 @@
-"""Listicle density: bullet/list/header markers per word of teacher prose.
+r"""Listicle density: bullet/list/header markers per word of teacher prose.
 
 Measures: how heavily the teacher leans on bulleted lists, numbered
 lists, headers, and bolded "labels" relative to the volume of prose
@@ -19,9 +19,16 @@ Markers counted (each occurrence once):
 - `N.` numbered lists at line start
 - `#` through `######` headers at line start
 - `**short bold**` (≤30 chars) used as inline labels
+- LaTeX display blocks (`\[...\]`, `$$...$$`, `\begin{equation}...`) —
+  these fragment prose into prose / equation / prose / equation chunks
+  just like bullets do, so structurally they're the same failure mode
+
+Inline LaTeX `\(x\)` is NOT counted — it's normal mathematical writing,
+not structural padding.
 
 Code is stripped first so embedded Markdown inside a code fence doesn't
-count.
+count. LaTeX is NOT stripped before marker counting (we want to count
+it), only after.
 
 Thresholds:
 - good_at density = 0.015 (≈1 marker per 67 words) — light structure.
@@ -36,8 +43,10 @@ from __future__ import annotations
 import re
 
 from teachingbench.grader.functions.deterministic._utils import (
+    latex_display_blocks,
     linear_decay,
     strip_code_blocks,
+    strip_latex,
     teacher_turns,
     word_count,
 )
@@ -55,12 +64,18 @@ ZERO_AT = 0.10
 
 
 def _markers(text: str) -> int:
+    # LaTeX display blocks are counted BEFORE stripping; the markdown
+    # markers are counted on text that excludes the LaTeX bodies (so a
+    # `**foo**` inside an equation doesn't double-count).
+    n_latex = len(latex_display_blocks(text))
+    sans_latex = strip_latex(text)
     return (
-        len(_DASH_BULLET.findall(text))
-        + len(_STAR_BULLET.findall(text))
-        + len(_NUM_LIST.findall(text))
-        + len(_HEADER.findall(text))
-        + len(_SHORT_BOLD.findall(text))
+        n_latex
+        + len(_DASH_BULLET.findall(sans_latex))
+        + len(_STAR_BULLET.findall(sans_latex))
+        + len(_NUM_LIST.findall(sans_latex))
+        + len(_HEADER.findall(sans_latex))
+        + len(_SHORT_BOLD.findall(sans_latex))
     )
 
 
@@ -73,7 +88,9 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     for t in turns:
         prose = strip_code_blocks(t)
         total_markers += _markers(prose)
-        total_words += word_count(prose)
+        # Word count uses prose with LaTeX stripped — we don't want the
+        # \frac{d}{dx} tokens inflating the denominator.
+        total_words += word_count(strip_latex(prose))
     if total_words == 0:
         return None
     density = total_markers / total_words

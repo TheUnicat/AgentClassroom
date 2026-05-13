@@ -36,6 +36,21 @@ Score: 1.0 inside the band, linear decay to 0.0 at 4 grade levels
 outside (either above or below the band). Returning None when there's
 not enough text to compute meaningfully (<20 words or <2 sentences) or
 no teacher turns at all.
+
+**LaTeX handling.** Math content fools the raw FK formula: LaTeX
+tokenizes into many short symbol "words" (`x`, `n`, `frac`, `lim`),
+which inflate words/sentence and crash syllables/word, dragging the
+estimate to 9-12 even when the prose around the math is dense. Fix:
+
+  1. Measure latex_density on the post-code-strip text (chars inside
+     LaTeX / total chars).
+  2. Strip LaTeX before computing the base FK on the surrounding prose.
+  3. Add `LATEX_FK_BUMP * latex_density` to the base — treats LaTeX
+     content as "somewhat above-average complexity". A response that's
+     ~30% LaTeX (typical math tutoring) gets ~+1.2 grade levels.
+  4. If after stripping there's too little prose to FK but there WAS
+     significant LaTeX, fall back to `LATEX_FALLBACK_FK = 13` (advanced
+     band) — pure-equation responses register as graduate-level dense.
 """
 
 from __future__ import annotations
@@ -44,7 +59,9 @@ import re
 
 from teachingbench.grader.functions.deterministic._utils import (
     clamp01,
+    latex_density as _latex_density,
     strip_code_blocks,
+    strip_latex,
     teacher_turns,
     words,
 )
@@ -59,6 +76,15 @@ _BANDS: dict[str, tuple[float, float]] = {
 }
 _DEFAULT_BAND = (9.0, 12.0)
 _OUTSIDE_DECAY_GRADES = 4.0
+
+# LaTeX as "somewhat above-average complexity". A response that's e.g.
+# 30% LaTeX by chars gets +1.2 grades on top of its base prose FK.
+LATEX_FK_BUMP = 4.0
+# Fallback when the response is mostly equations (prose too short to FK)
+# AND latex_density is significant. 13.0 is mid-advanced — not catastrophic,
+# but signals "this is graduate-level dense" for tasks below that band.
+LATEX_FALLBACK_FK = 13.0
+LATEX_FALLBACK_MIN_DENSITY = 0.15
 
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?]+(?:\s+|$)")
 _VOWEL_GROUP_RE = re.compile(r"[aeiouy]+")
@@ -104,9 +130,19 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     if not turns:
         return None
     prose = "\n\n".join(strip_code_blocks(t) for t in turns)
-    fk = _fk_grade(prose)
-    if fk is None:
-        return None
+    density = _latex_density(prose)
+    clean = strip_latex(prose)
+    base = _fk_grade(clean)
+    if base is None:
+        # Too little prose to compute base FK. If there was significant
+        # LaTeX, the response was a math-block; rate it as dense (advanced
+        # band). Otherwise we genuinely have nothing to score.
+        if density >= LATEX_FALLBACK_MIN_DENSITY:
+            fk = LATEX_FALLBACK_FK
+        else:
+            return None
+    else:
+        fk = base + LATEX_FK_BUMP * density
     lo, hi = _band_for(task_info)
     if lo <= fk <= hi:
         return 1.0
