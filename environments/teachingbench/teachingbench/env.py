@@ -46,17 +46,34 @@ def load_environment(
     pass_threshold: float = 0.6,
     task_filter: str | None = None,
     skip_judge: bool = False,
+    tutor_system_prompt: str | None = None,
+    tutor_system_prompt_name: str | None = None,
     **kwargs: Any,
 ) -> vf.Environment:
     """Verifiers entry point. Don't pin the tutor model here — Verifiers passes it into rollout.
 
     skip_judge=True runs rollouts but short-circuits the judge call to return 0.0 reward.
     Use this for batch-rollout-then-judge-later workflows.
+
+    Teacher system prompt selection (modular — any combo of model + prompt
+    + task can be rolled out):
+    - `tutor_system_prompt_name`: name from `teacher_prompts.TEACHER_PROMPTS`
+      (currently `"socratic"`, `"concise"`, `"materials_first"`). Looked up
+      via `get_teacher_prompt`; unknown names resolve to empty string.
+    - `tutor_system_prompt`: raw string override. Takes precedence over the
+      name lookup. If both are None, the per-task `tutor_system_prompt`
+      from meta.yaml is used (which defaults to empty).
     """
+    from teachingbench.teacher_prompts import get_teacher_prompt
+
     if judge_client is None:
         judge_client = AsyncOpenAI()
     rubric = TeachingRubric(judge_client=judge_client, judge_model=judge_model, skip_judge=skip_judge)
     dataset = build_dataset(task_filter=task_filter)
+
+    if tutor_system_prompt is None and tutor_system_prompt_name is not None:
+        tutor_system_prompt = get_teacher_prompt(tutor_system_prompt_name)
+
     return TeachingEnv(
         dataset=dataset,
         rubric=rubric,
@@ -69,6 +86,7 @@ def load_environment(
         pass_threshold=pass_threshold,
         tools=TOOLS,
         env_id="teachingbench",
+        tutor_system_prompt_override=tutor_system_prompt,
         **kwargs,
     )
 
@@ -83,6 +101,7 @@ class TeachingEnv(vf.MultiTurnEnv):
         student_model: str,
         default_turns: int = 4,
         tools: list[Any] | None = None,
+        tutor_system_prompt_override: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._tools = list(tools or [])
@@ -98,6 +117,10 @@ class TeachingEnv(vf.MultiTurnEnv):
         self._student_client = student_client
         self._student_model = student_model
         self._default_turns = default_turns
+        # Env-level override for the per-task tutor system prompt. When
+        # set (non-empty), takes precedence over the task's own
+        # `tutor_system_prompt` for every rollout in this env instance.
+        self._tutor_system_prompt_override = tutor_system_prompt_override
 
     # ------------------------------------------------------------------ setup
 
@@ -108,7 +131,14 @@ class TeachingEnv(vf.MultiTurnEnv):
         topic = info.get("topic", "(unknown topic)")
         subject = info.get("subject", "(unknown subject)")
         turns = int(info.get("turns") or self._default_turns)
-        tutor_system_prompt = info.get("tutor_system_prompt", "")
+        # Env-level override wins over per-task setting when non-empty.
+        # If both are None/empty, the prompt is empty (no teacher conditioning) —
+        # matches DEFAULT_TUTOR_SYSTEM_PROMPT = "".
+        tutor_system_prompt = (
+            self._tutor_system_prompt_override
+            if self._tutor_system_prompt_override
+            else info.get("tutor_system_prompt", "")
+        )
         student_system_prompt = info.get("student_system_prompt", "")
         fixed_followups = list(info.get("fixed_student_followups") or [])
 
