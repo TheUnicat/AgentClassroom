@@ -9,38 +9,44 @@ A `results.jsonl` row can carry a `judge_cache` blob alongside its
                 {"value": float | None,
                  "rationale": str,
                  "source": str,
-                 "ts": float},
+                 "ts": float,
+                 "turn": int | None},   # None = outcome-level, int = per-turn (0-indexed teacher turn)
                 ...
             ]
         }
     }
 
+This is the **single centralized record** for all judging on a rollout.
+LLM judge calls and per-turn deterministic state values both land here.
+The `turn` field distinguishes:
+  - `turn=None`: outcome-level value (whole-rollout aggregate). What
+    v1_llm_only, v2_hybrid, and the outcome path of state_v1 emit.
+  - `turn=k`:    per-turn state value at the k-th teacher turn
+    (0-indexed). What state_v1 emits for each per-turn-natural
+    deterministic function.
+
+Deterministic results use `model="deterministic"`. LLM results use the
+actual model id (e.g. `claude-opus-4-7`).
+
 Reading:
-- `lookup_cached(row, crit, model)` returns an aggregated result over
-  all entries matching `(crit, model)` — averaging numeric `value`s,
-  carrying the most recent rationale, attaching counts in `raw`. None
-  if there are no matching entries.
-- `lookup_legacy(row, crit)` falls back to scanning `judge_breakdown`
-  and any `judge_breakdown__*` for that criterion's score, so v1's
-  batched scores are reused without re-judging. Model isn't recorded
-  in legacy buckets so we accept any match.
+- `lookup_cached(row, crit, model, turn=None)` — aggregated result over
+  entries matching (crit, model, turn). Numeric values averaged; most-
+  recent rationale carried. None if no matching entries.
+- `lookup_legacy(row, crit)` — fallback for OUTCOME-level scans: looks
+  at `judge_breakdown` and `judge_breakdown__*` for v1's batched
+  scores. Outcome-only (turn=None).
 
 Writing:
-- `store(row, crit, model, result, source)` appends a new entry. Source
-  is a short label like `composer:v2_hybrid` or `runner:force-recall`.
+- `store(row, crit, model, result, source, turn=None)` — append. Source
+  is a short label like `composer:v2_hybrid` or `composer:state_v1`.
 
-Why averaging on read:
-- Re-judging a criterion (e.g. `--force-recall`) writes a NEW entry
-  rather than overwriting. Subsequent reads return the mean of all
-  recorded values, giving cheap noise reduction when you've spent the
-  cycles to judge twice.
+Multiple entries with the same (crit, model, turn) are averaged on
+read — re-judging adds rather than overwrites, so subsequent reads
+benefit from noise reduction.
 
-Why the legacy fallback:
-- Most rollouts in the 228-baseline already have v1's batched
-  `judge_breakdown.scores`. For a composer that wants e.g. only
-  `answers_the_question`, scanning that bucket avoids a redundant LLM
-  call. After the legacy hit we also write it into `judge_cache` so
-  later reads are a single dict lookup, not a multi-bucket scan.
+Backwards compatibility: cache entries written before `turn` was
+introduced have no `turn` key, which is treated as `turn=None`
+(outcome-level). No migration needed.
 """
 
 from __future__ import annotations
@@ -54,21 +60,28 @@ CACHE_KEY = "judge_cache"
 # --- raw cache access ------------------------------------------------------
 
 
-def _entries(row: dict, criterion: str, model: str) -> list[dict]:
-    return (
+def _entries(row: dict, criterion: str, model: str, turn: int | None = None) -> list[dict]:
+    """All entries matching (criterion, model, turn). `turn=None` matches
+    only outcome-level entries (entries without a `turn` key OR with
+    `turn` explicitly None). `turn=k` matches only entries with `turn==k`.
+    """
+    raw = (
         row.get(CACHE_KEY, {})
         .get(criterion, {})
         .get(model, [])
     )
+    if turn is None:
+        return [e for e in raw if e.get("turn") is None]
+    return [e for e in raw if e.get("turn") == turn]
 
 
-def lookup_cached(row: dict, criterion: str, model: str) -> dict | None:
-    """Aggregated result for (criterion, model), or None if no entries.
+def lookup_cached(row: dict, criterion: str, model: str, turn: int | None = None) -> dict | None:
+    """Aggregated result for (criterion, model, turn), or None.
 
-    Returned dict has the same `{value, rationale, raw}` shape that an LLM
-    function would return, so the caller can use it interchangeably.
+    `turn=None` (default) returns the outcome-level cached value.
+    `turn=k` returns the cached per-turn value at teacher turn k.
     """
-    entries = _entries(row, criterion, model)
+    entries = _entries(row, criterion, model, turn)
     if not entries:
         return None
     return _aggregate(entries)
@@ -101,8 +114,20 @@ def lookup_legacy(row: dict, criterion: str) -> dict | None:
     return None
 
 
-def store(row: dict, criterion: str, model: str, result: dict, source: str) -> None:
-    """Append a new entry to the cache for (criterion, model)."""
+def store(
+    row: dict,
+    criterion: str,
+    model: str,
+    result: dict,
+    source: str,
+    *,
+    turn: int | None = None,
+) -> None:
+    """Append a new entry to the cache for (criterion, model, turn).
+
+    `turn=None` writes an outcome-level entry (the default, used by
+    the LLM caching path). `turn=k` writes a per-turn state value.
+    """
     cache = row.setdefault(CACHE_KEY, {})
     by_crit = cache.setdefault(criterion, {})
     entries = by_crit.setdefault(model, [])
@@ -111,13 +136,21 @@ def store(row: dict, criterion: str, model: str, result: dict, source: str) -> N
         "rationale": str(result.get("rationale") or ""),
         "source": source,
         "ts": time.time(),
+        "turn": turn,
     })
 
 
-def store_many(row: dict, model: str, results: dict[str, dict], source: str) -> None:
+def store_many(
+    row: dict,
+    model: str,
+    results: dict[str, dict],
+    source: str,
+    *,
+    turn: int | None = None,
+) -> None:
     """Batch helper — store N (criterion, result) pairs at one source/ts."""
     for crit, result in results.items():
-        store(row, crit, model, result, source)
+        store(row, crit, model, result, source, turn=turn)
 
 
 # --- aggregation -----------------------------------------------------------
@@ -163,6 +196,7 @@ async def cached_judge(
     force_recall: bool = False,
     use_legacy_fallback: bool = True,
     composer_name: str = "",
+    turn: int | None = None,
 ) -> dict:
     """LLM judge with row-level caching.
 
@@ -170,21 +204,31 @@ async def cached_judge(
     - `row=None` → caching disabled, behaves like a direct call.
     - `force_recall=True` → always calls the LLM, appends a new entry.
       Future reads return the mean of all entries (including this one).
-    - Otherwise: returns `judge_cache` hit if any; else `judge_breakdown*`
-      legacy hit (if `use_legacy_fallback`); else calls the LLM and
-      stores the result.
+    - Otherwise: returns `judge_cache` hit if any; else (only for
+      outcome-level, `turn=None`) `judge_breakdown*` legacy hit; else
+      calls the LLM and stores the result.
+
+    `turn`:
+    - `None` (default) → outcome-level cache lookup/store. This is what
+      v1_llm_only / v2_hybrid / state_v1's outcome LLM path use.
+    - `int k`         → per-turn cache lookup/store. The caller is
+      responsible for slicing `messages` to the appropriate prefix
+      before calling. Legacy fallback is disabled for per-turn lookups
+      (legacy entries are outcome-only).
     """
     if row is not None and not force_recall:
-        hit = lookup_cached(row, criterion_id, judge_model)
+        hit = lookup_cached(row, criterion_id, judge_model, turn=turn)
         if hit is not None:
             return hit
-        if use_legacy_fallback:
+        # Legacy fallback only applies to outcome-level (turn=None).
+        if use_legacy_fallback and turn is None:
             legacy = lookup_legacy(row, criterion_id)
             if legacy is not None:
                 store(
                     row, criterion_id, judge_model,
                     {"value": legacy["value"], "rationale": legacy["rationale"]},
                     source=f"legacy:{legacy['source']}",
+                    turn=None,
                 )
                 return {
                     "value": legacy["value"],
@@ -202,7 +246,9 @@ async def cached_judge(
         source = f"composer:{composer_name}" if composer_name else "composer_call"
         if force_recall:
             source = f"{source}:force_recall"
-        store(row, criterion_id, judge_model, result, source=source)
+        if turn is not None:
+            source = f"{source}:turn={turn}"
+        store(row, criterion_id, judge_model, result, source=source, turn=turn)
     return result
 
 

@@ -82,6 +82,18 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return (recall - ZERO_AT) / (GOOD_AT - ZERO_AT)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Recall in the latest teacher turn vs the seed question.
+
+    This metric is naturally per-turn — `score()` always looked at the
+    LAST teacher message in the input. On a prefix, that's just the
+    most-recent teacher turn at that point. So `score_turn` is the same
+    computation as `score`, exposed under the per-turn name for the
+    state-based composer's benefit.
+    """
+    return score(messages, task_info)
+
+
 if __name__ == "__main__":
     # Case 1: final turn echoes seed-question content tokens.
     grounded = [

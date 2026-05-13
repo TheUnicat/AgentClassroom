@@ -1,34 +1,44 @@
-"""state_v1: trajectory composer (per-turn state values + outcome roll-up).
+"""state_v1: trajectory composer (per-turn state values + delta evaluation).
 
-Same criteria + weights as `v2_hybrid`, but the per-turn-natural functions
-are evaluated AFTER EACH TEACHER TURN (state-based), producing a
-trajectory of per-turn signal vectors stored in `composite_terms.trajectory`.
-The aggregate composite is then computed by averaging non-None per-turn
-values for those criteria, plus the existing sequence-level / outcome
-signals for the rest.
+Same criteria + weights as `v2_hybrid`, but built from per-turn state
+values instead of one rollout-level aggregate per criterion. The
+trajectory of per-turn signals is stored in `composite_terms.trajectory`
+and ALSO mirrored into the row's `judge_cache` (model="deterministic",
+turn=k) so other composers / inspections can read it without going
+through state_v1.
 
-What changes vs v2_hybrid:
-- Per-turn deterministic functions are called on conversation PREFIXES
-  (`messages[:msg_idx+1]` for each teacher turn). They expose a `score_turn`
-  module-level function that returns the state value at that point.
-- The aggregate for those criteria is `mean(non-None per-turn values)`,
-  which is conceptually a state-averaged signal rather than a
-  rollout-level aggregate. For most criteria the two agree closely; where
-  they differ (e.g. anti_firehose_length, listicle_density), the per-turn
-  mean is the better failure-mode signal (one bad turn isn't averaged
-  away by surrounding good ones).
-- Sequence-level deterministic functions (`concept_velocity`,
-  `type_token_ratio`, `seed_question_recall`) stay outcome-level — they
-  measure cross-turn variance / diversity / drift, not per-turn state.
-- LLM functions stay outcome-level for now (one call per rollout).
-  Per-turn LLM scoring is a follow-up — it'd 4× the call count and
-  needs separate calibration.
+Three classes of criteria, with three scoring paths:
 
-The trajectory output is the dense state-value sequence that's useful
-for (a) debugging single rollouts (see where teaching broke down) and
-(b) future RL training where per-step rewards beat outcome-only.
+  A. **Per-turn-natural** (9 fns: anti_firehose_length, first_message_length,
+     listicle_density, turn_asymmetry, sycophancy_regex, echo_score,
+     question_density, flesch_kincaid, code_validity, seed_question_recall).
+     Each fn exposes `score_turn(messages_so_far, task_info)` which returns
+     the *immediate reward* for the latest teacher turn — the score of THIS
+     specific message, no contamination from earlier turns. This is the
+     chess analog of `r_t = V_t - V_{t-1}` for stateless actions.
 
-Same WEIGHTS as v2_hybrid so composites are directly comparable.
+  B. **Sequence-level cumulative** (2 fns: concept_velocity, type_token_ratio).
+     These measure CROSS-TURN structure (variance of novelty across turns,
+     vocabulary diversity across all prose) — they have no meaningful "this
+     turn alone" reading. We use **delta evaluation**:
+         V(s_t) = score(messages[:msg_idx+1], task_info)
+         r_t   = V(s_t) - V(s_{t-1})   with V(s_-1) := 0
+     The first turn where V becomes defined gets r_t = V_t (treating the
+     prior None as 0). Once both V_t and V_{t-1} are defined, r_t is a
+     proper delta. This matches the chess-engine V(s)/r decomposition.
+
+  C. **Outcome-level LLM** (3 fns: answers_the_question, anti_firehose,
+     no_excessive_validation). One LLM call per rollout, cached. Per-turn
+     LLM is a future-extension — disabled here to keep cost flat.
+
+Aggregation for the final composite:
+  - Per-turn-natural: mean of non-None per-turn values (same as before).
+  - Sequence-level: V(s_final) — same number `score()` would return on
+    the full rollout. The deltas are diagnostic, the aggregate is the
+    final state value (chess-like).
+  - LLM: outcome value, unchanged.
+
+WEIGHTS mirror v2_hybrid exactly so composites are directly comparable.
 """
 
 from __future__ import annotations
@@ -37,7 +47,7 @@ import asyncio
 from typing import Any
 
 from teachingbench.grader.composers.base import default_compose
-from teachingbench.grader.judge_cache import cached_judge
+from teachingbench.grader.judge_cache import cached_judge, store
 from teachingbench.grader.functions.deterministic import (
     anti_firehose_length,
     code_validity,
@@ -58,9 +68,8 @@ from teachingbench.grader.functions.llm import (
 )
 
 NAME = "state_v1"
+DETERMINISTIC_MODEL_TAG = "deterministic"
 
-# Mirror v2_hybrid exactly so the difference is *only* the per-turn vs
-# rollout-aggregate scoring path.
 WEIGHTS: dict[str, float] = {
     "answers_the_question":    0.18,
     "anti_firehose":           0.14,
@@ -80,7 +89,8 @@ WEIGHTS: dict[str, float] = {
 assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, f"weights sum {sum(WEIGHTS.values())} != 1.0"
 
 
-# Per-turn-natural: called on each `messages[:teacher_msg_idx+1]` slice
+# Class A: per-turn-natural — each module exposes score_turn returning
+# the immediate reward for the latest teacher turn given its history.
 _PER_TURN_DET: dict[str, Any] = {
     "anti_firehose_length":  anti_firehose_length,
     "first_message_length":  first_message_length,
@@ -90,16 +100,17 @@ _PER_TURN_DET: dict[str, Any] = {
     "question_density":      question_density,
     "flesch_kincaid":        flesch_kincaid,
     "code_validity":         code_validity,
+    "seed_question_recall":  seed_question_recall,
 }
 
-# Sequence-level deterministic: stay outcome-level
+# Class B: sequence-level cumulative — score on prefix gives V(s_t),
+# composer derives r_t = V_t - V_{t-1} for the trajectory.
 _SEQ_DET: dict[str, Any] = {
-    "concept_velocity":     concept_velocity,
-    "type_token_ratio":     type_token_ratio,
-    "seed_question_recall": seed_question_recall,
+    "concept_velocity":  concept_velocity,
+    "type_token_ratio":  type_token_ratio,
 }
 
-# LLM: outcome-level for state_v1 (per-turn LLM is a separate composer)
+# Class C: outcome-level LLM — one call per rollout, cached.
 _LLM_FNS: dict[str, Any] = {
     "answers_the_question":    answers_the_question,
     "anti_firehose":           anti_firehose,
@@ -115,6 +126,22 @@ def _role(m: Any) -> str:
 
 def _teacher_msg_indices(messages: list[dict]) -> list[int]:
     return [i for i, m in enumerate(messages) if _role(m) == "assistant"]
+
+
+def _delta_first_defined(prev: float | None, curr: float | None) -> float | None:
+    """Delta with the V(s_-1) := 0 convention.
+
+    - Both None → None (criterion stays undefined here)
+    - curr None  → None (we have no current state value to report)
+    - prev None, curr defined → curr (first-defined-turn reward; treats
+      prior state as 0 so r adds up to V_final over the trajectory)
+    - both defined → curr - prev
+    """
+    if curr is None:
+        return None
+    if prev is None:
+        return curr
+    return curr - prev
 
 
 async def score(
@@ -133,27 +160,79 @@ async def score(
             "outcome-level LLM criteria."
         )
 
-    # 1) Build the per-turn trajectory.
     t_msg_idxs = _teacher_msg_indices(messages)
+
+    # ----- Class A: per-turn-natural ----------------------------------
+    # For each teacher turn, call score_turn on the prefix. Store each
+    # value in the unified judge_cache under model="deterministic", turn=k.
     trajectory: list[dict[str, Any]] = []
+    prev_seq_values: dict[str, float | None] = {cid: None for cid in _SEQ_DET}
+
     for tk, msg_idx in enumerate(t_msg_idxs):
         slice_ = messages[: msg_idx + 1]
-        turn_scores: dict[str, float | None] = {}
-        for cid, mod in _PER_TURN_DET.items():
-            turn_scores[cid] = mod.score_turn(slice_, task_info)
-        trajectory.append({"turn": tk + 1, "msg_idx": msg_idx, "scores": turn_scores})
 
-    # 2) Aggregate per-turn signals: mean of non-None values per criterion.
+        # Per-turn-natural: immediate reward for THIS teacher turn.
+        per_turn_scores: dict[str, float | None] = {}
+        for cid, mod in _PER_TURN_DET.items():
+            v = mod.score_turn(slice_, task_info)
+            per_turn_scores[cid] = v
+            if cache is not None and not force_recall:
+                store(
+                    cache, cid, DETERMINISTIC_MODEL_TAG,
+                    {"value": v, "rationale": ""},
+                    source=f"composer:{NAME}",
+                    turn=tk,
+                )
+
+        # Sequence-level: V(s_t) = score on the prefix; r_t = V_t - V_{t-1}.
+        seq_state: dict[str, float | None] = {}
+        seq_delta: dict[str, float | None] = {}
+        for cid, mod in _SEQ_DET.items():
+            v_t = mod.score(slice_, task_info)
+            seq_state[cid] = v_t
+            seq_delta[cid] = _delta_first_defined(prev_seq_values[cid], v_t)
+            prev_seq_values[cid] = v_t
+            if cache is not None and not force_recall:
+                # Cache the state value V_t — that's the canonical per-turn
+                # record. The delta is reproducible from the V sequence.
+                store(
+                    cache, cid, DETERMINISTIC_MODEL_TAG,
+                    {"value": v_t, "rationale": ""},
+                    source=f"composer:{NAME}",
+                    turn=tk,
+                )
+
+        trajectory.append({
+            "turn": tk + 1,
+            "msg_idx": msg_idx,
+            "scores": per_turn_scores,        # class A: per-turn immediate rewards
+            "state":  seq_state,              # class B: V(s_t) for cumulative criteria
+            "delta":  seq_delta,              # class B: r_t = V_t - V_{t-1}
+        })
+
+    # ----- Aggregate -----------------------------------------------------
     aggregated: dict[str, float | None] = {}
+
+    # Class A aggregate: mean of non-None per-turn values.
     for cid in _PER_TURN_DET:
         vals = [t["scores"][cid] for t in trajectory if t["scores"][cid] is not None]
         aggregated[cid] = sum(vals) / len(vals) if vals else None
 
-    # 3) Sequence-level deterministic: run on full messages.
+    # Class B aggregate: V(s_final) — the score on the full rollout. This
+    # equals the last non-None V in the trajectory; equivalently, the sum
+    # of all r_t with the V_0=0 convention. We use the canonical score()
+    # on the full messages for clarity.
     for cid, mod in _SEQ_DET.items():
         aggregated[cid] = mod.score(messages, task_info)
+        if cache is not None and not force_recall:
+            store(
+                cache, cid, DETERMINISTIC_MODEL_TAG,
+                {"value": aggregated[cid], "rationale": ""},
+                source=f"composer:{NAME}",
+                turn=None,
+            )
 
-    # 4) LLM (outcome-level), routed through cached_judge.
+    # ----- Class C: outcome LLM (cached) ---------------------------------
     llm_results = await asyncio.gather(*[
         cached_judge(
             cache,
