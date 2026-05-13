@@ -68,13 +68,33 @@ def _build_judge_client(judge_model: str):
     return AsyncOpenAI()
 
 
-async def _judge_row(composer, row: dict, *, judge_client, judge_model, sampling_args) -> dict:
-    return await composer.score(
-        _build_messages(row),
-        _row_info(row),
+async def _judge_row(
+    composer,
+    row: dict,
+    *,
+    judge_client,
+    judge_model,
+    sampling_args,
+    force_recall: bool = False,
+) -> dict:
+    # Pass the whole row as `cache` — composers that support caching pull
+    # criterion entries from `row["judge_cache"]` and append new ones.
+    # Composers that don't support caching ignore the kwarg.
+    import inspect
+    kwargs = dict(
         judge_client=judge_client,
         judge_model=judge_model,
         judge_sampling_args=sampling_args,
+    )
+    sig = inspect.signature(composer.score)
+    if "cache" in sig.parameters:
+        kwargs["cache"] = row
+    if "force_recall" in sig.parameters:
+        kwargs["force_recall"] = force_recall
+    return await composer.score(
+        _build_messages(row),
+        _row_info(row),
+        **kwargs,
     )
 
 
@@ -118,6 +138,7 @@ async def main_async(args: argparse.Namespace) -> int:
                     judge_client=judge_client,
                     judge_model=args.judge_model,
                     sampling_args=sampling_args,
+                    force_recall=args.force_recall,
                 )
                 comp = row[breakdown_key].get("composite", 0.0)
                 logger.info("row %d: composite=%.3f", i, comp)
@@ -160,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="parallel judge calls (default 4)")
     parser.add_argument("--overwrite", action="store_true",
                         help="re-judge rows that already have judge_breakdown__<composer>")
+    parser.add_argument("--force-recall", action="store_true",
+                        help="bypass per-criterion cache; LLM is called even if a cached value exists. "
+                             "Adds a new cache entry — subsequent reads average over all entries.")
     parser.add_argument("--limit", type=int, default=None,
                         help="judge only the first N rows (for sanity checks)")
     parser.add_argument("--out", help="output path (default: in-place)")

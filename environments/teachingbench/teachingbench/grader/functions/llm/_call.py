@@ -308,4 +308,253 @@ async def _anthropic_call(
     return {"error": "no tool_use block in response"}
 
 
-__all__ = ["single_criterion_call"]
+# --- batched (multi-criterion) call ---------------------------------------
+#
+# `single_criterion_call` makes one LLM call per criterion — clean isolation,
+# but costly when a composer wants 5+ criteria from the same transcript.
+# `batched_criterion_call` packages N criteria into ONE call, returning N
+# scores with their own rationales. Structurally similar to v1's batched
+# judge in `grader.judge.judge_transcript`, but flat schema and per-criterion
+# rationale instead of one overall rationale.
+#
+# Not wired into any composer yet — available for composers that opt in
+# (e.g. v2_hybrid grouping all its LLM-side criteria into one call).
+
+
+def _build_batched_schema(criteria: list[dict[str, Any]]) -> dict[str, Any]:
+    """JSON schema with one nested {value, rationale} object per criterion id."""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for c in criteria:
+        cid = c["id"]
+        properties[cid] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["value", "rationale"],
+            "properties": {
+                "value": {
+                    "type": ["number", "null"],
+                    "description": c.get("description", "")[:200] or
+                                   f"Score for {cid} in [0,1] or null.",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Short justification for the score.",
+                },
+            },
+        }
+        required.append(cid)
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": required,
+        "properties": properties,
+    }
+
+
+def _build_batched_user_prompt(
+    *,
+    criteria: list[dict[str, Any]],
+    materials: str,
+    topic: str,
+    transcript: str,
+) -> str:
+    lines = [
+        "You are grading a tutoring session against MULTIPLE criteria.",
+        "",
+        f"Topic: {topic}",
+        "",
+        f"Materials the student had:\n<materials>\n{materials}\n</materials>",
+        "",
+        "Criteria (score each independently in [0, 1] or return null):",
+    ]
+    for i, c in enumerate(criteria, 1):
+        cid = c["id"]
+        desc = c.get("description", "")
+        lines.append("")
+        lines.append(f"  ({i}) **{cid}**")
+        lines.append(f"      {desc}")
+        anchors = c.get("anchors") or []
+        if anchors:
+            lines.append("      Anchors:")
+            for a in anchors:
+                score = a.get("score")
+                label = "null" if score is None else f"{float(score):.2f}"
+                lines.append(f"        - {label} → {a.get('meaning', '')}")
+    lines += [
+        "",
+        f"Transcript:\n<transcript>\n{transcript}\n</transcript>",
+        "",
+        "Score each criterion independently — don't compensate across them "
+        "(the composite is computed downstream). Anchors are calibration "
+        "points; interpolate freely. Return ONLY a JSON object matching the "
+        "schema: one nested {value, rationale} object per criterion id.",
+    ]
+    return "\n".join(lines)
+
+
+def _normalize_batched_parsed(
+    parsed: Any,
+    criteria: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Coerce a parsed payload into `{crit_id: {value, rationale, raw}}` for
+    every requested criterion. Missing criteria → value=None, rationale=
+    'missing'. Malformed entries → value=None, rationale='parse_error'."""
+    out: dict[str, dict[str, Any]] = {}
+    for c in criteria:
+        cid = c["id"]
+        entry = parsed.get(cid) if isinstance(parsed, dict) else None
+        if not isinstance(entry, dict):
+            out[cid] = {"value": None, "rationale": "missing", "raw": {}}
+            continue
+        out[cid] = {
+            "value": _clamp01_or_none(entry.get("value")),
+            "rationale": str(entry.get("rationale") or ""),
+            "raw": entry,
+        }
+    return out
+
+
+async def batched_criterion_call(
+    judge_client: Any,
+    judge_model: str,
+    *,
+    criteria: list[dict[str, Any]],
+    materials: str,
+    topic: str,
+    transcript: str,
+    sampling_args: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Score multiple criteria in ONE LLM call.
+
+    `criteria`: list of `{"id": str, "description": str, "anchors": [...]}`
+    dicts — same shape used in `DEFAULT_RUBRIC` and the per-criterion
+    function modules.
+
+    Returns `{crit_id: {"value": float|None, "rationale": str, "raw": dict}}`
+    for every criterion in the input, including ones the judge couldn't
+    score (those come back as `value=None, rationale="missing"`). Never
+    raises — failures collapse to all-None results with an error rationale.
+    """
+    if not criteria:
+        return {}
+
+    provider = detect_provider(judge_model)
+    prompt = _build_batched_user_prompt(
+        criteria=criteria, materials=materials, topic=topic, transcript=transcript,
+    )
+    schema = _build_batched_schema(criteria)
+    schema_name = f"batched_criteria_{'_'.join(c['id'] for c in criteria)[:60]}"
+
+    if provider == "anthropic":
+        parsed_or_err = await _anthropic_batched(
+            judge_client, judge_model, schema, schema_name, prompt, sampling_args,
+        )
+    else:
+        parsed_or_err = await _openai_batched(
+            judge_client, judge_model, schema, schema_name, prompt, sampling_args,
+        )
+
+    if "error" in parsed_or_err:
+        msg = parsed_or_err["error"]
+        return {c["id"]: {"value": None, "rationale": msg, "raw": {}} for c in criteria}
+
+    return _normalize_batched_parsed(parsed_or_err["parsed"], criteria)
+
+
+async def _openai_batched(
+    judge_client: Any,
+    judge_model: str,
+    schema: dict[str, Any],
+    schema_name: str,
+    prompt: str,
+    sampling_args: dict[str, Any] | None,
+) -> dict[str, Any]:
+    args = dict(sampling_args or {})
+    if "max_tokens" in args:
+        args["max_completion_tokens"] = args.pop("max_tokens")
+    args = {k: v for k, v in args.items() if v is not None}
+    try:
+        resp = await judge_client.chat.completions.create(
+            model=judge_model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name[:64],
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            **args,
+        )
+        raw = resp.choices[0].message.content or ""
+    except Exception as e:
+        logger.warning("OpenAI batched-criterion call failed: %s", e)
+        return {"error": f"judge_error: {e}"}
+    try:
+        return {"parsed": json.loads(raw)}
+    except json.JSONDecodeError:
+        return {"error": "parse_error"}
+
+
+async def _anthropic_batched(
+    judge_client: Any,
+    judge_model: str,
+    schema: dict[str, Any],
+    schema_name: str,
+    prompt: str,
+    sampling_args: dict[str, Any] | None,
+) -> dict[str, Any]:
+    system_text = (
+        "You are grading a tutoring session against multiple criteria. "
+        "Score each criterion independently in [0, 1] or null. Anchors "
+        "are calibration points — interpolate freely. Submit your scores "
+        "via the `report_batched_scores` tool."
+    )
+    tool_def = {
+        "name": "report_batched_scores",
+        "description": "Submit per-criterion score and rationale objects.",
+        "input_schema": schema,
+        "cache_control": {"type": "ephemeral"},
+    }
+    args = dict(sampling_args or {})
+    args.pop("max_completion_tokens", None)
+    args.pop("temperature", None)
+    args.setdefault("max_tokens", 4096)
+    args = {k: v for k, v in args.items() if v is not None}
+    try:
+        resp = await judge_client.messages.create(
+            model=judge_model,
+            system=[{"type": "text", "text": system_text,
+                     "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": prompt}],
+            tools=[tool_def],
+            tool_choice={"type": "tool", "name": "report_batched_scores"},
+            **args,
+        )
+    except Exception as e:
+        logger.warning("Anthropic batched-criterion call failed: %s", e)
+        return {"error": f"judge_error: {e}"}
+
+    for block in resp.content:
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and getattr(block, "name", None) == "report_batched_scores"
+        ):
+            tool_input = block.input
+            if isinstance(tool_input, dict):
+                return {"parsed": tool_input}
+            if isinstance(tool_input, str):
+                try:
+                    return {"parsed": json.loads(tool_input)}
+                except (json.JSONDecodeError, TypeError):
+                    recovered = _recover_xml_params(tool_input)
+                    if recovered is not None:
+                        return {"parsed": recovered}
+                    return {"error": "parse_error"}
+            return {"error": "parse_error"}
+    return {"error": "no tool_use block in response"}
+
+
+__all__ = ["single_criterion_call", "batched_criterion_call"]

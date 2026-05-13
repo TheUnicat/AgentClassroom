@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from teachingbench.grader.composers.base import default_compose
+from teachingbench.grader.judge_cache import cached_judge
 from teachingbench.grader.functions.deterministic import (
     anti_firehose_length,
     code_validity,
@@ -93,6 +94,8 @@ async def score(
     judge_client: Any = None,
     judge_model: str | None = None,
     judge_sampling_args: dict[str, Any] | None = None,
+    cache: dict | None = None,
+    force_recall: bool = False,
 ) -> dict:
     if judge_client is None or judge_model is None:
         raise ValueError(
@@ -105,12 +108,19 @@ async def score(
         cid: fn(messages, task_info) for cid, fn in _DET_FNS.items()
     }
 
-    # 2. LLM: answers_the_question only.
-    atq = await answers_the_question.score(
-        messages, task_info,
+    # 2. LLM: answers_the_question only. Goes through cached_judge so
+    # v1's batched score for this criterion is reused when present.
+    atq = await cached_judge(
+        cache,
+        criterion_id="answers_the_question",
+        llm_fn=answers_the_question,
+        messages=messages,
+        task_info=task_info,
         judge_client=judge_client,
         judge_model=judge_model,
         sampling_args=judge_sampling_args,
+        force_recall=force_recall,
+        composer_name=NAME,
     )
     scores["answers_the_question"] = atq.get("value")
 

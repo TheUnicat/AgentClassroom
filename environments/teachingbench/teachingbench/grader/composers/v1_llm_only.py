@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from teachingbench.grader.judge import judge_transcript
+from teachingbench.grader.judge_cache import store_many
 from teachingbench.prompts import DEFAULT_RUBRIC
 
 NAME = "v1_llm_only"
@@ -31,11 +32,13 @@ async def score(
     judge_client: Any,
     judge_model: str,
     judge_sampling_args: dict[str, Any] | None = None,
+    cache: dict | None = None,
+    force_recall: bool = False,
 ) -> dict:
     rubric = task_info.get("rubric")
     if not isinstance(rubric, list) or not rubric:
         rubric = DEFAULT_RUBRIC
-    return await judge_transcript(
+    result = await judge_transcript(
         judge_client,
         judge_model,
         rubric=rubric,
@@ -44,6 +47,18 @@ async def score(
         transcript=_render_transcript(messages),
         sampling_args=judge_sampling_args,
     )
+    # Backfill per-criterion cache from the batched call so future composers
+    # can pull individual criteria without re-judging. Splits the one
+    # overall rationale across criteria — coarse but better than nothing.
+    if cache is not None:
+        per_crit_results: dict[str, dict] = {}
+        rationale = str(result.get("rationale") or "")
+        for cid, value in (result.get("scores") or {}).items():
+            per_crit_results[cid] = {"value": value, "rationale": rationale}
+        if per_crit_results:
+            source = f"composer:{NAME}" + (":force_recall" if force_recall else "")
+            store_many(cache, judge_model, per_crit_results, source=source)
+    return result
 
 
 def _render_transcript(messages: list[dict]) -> str:
