@@ -71,6 +71,7 @@ CEILING_INTERPOLATION_POWER = 1.7
 # criterion with cap=0.1 means "if you score 0 here, you cannot exceed 0.1
 # on the composite, no matter how good everything else is."
 PER_CRITERION_CEILING_AT_ZERO: dict[str, float] = {
+    # ----- LLM criteria (existing) -----
     "answers_the_question":     0.20,   # most gating: wrong-question is catastrophic
     "factual_correctness":      0.10,   # load-bearing error → very bad
     "anti_firehose":            0.55,   # heavy firehose → bad presentation
@@ -79,6 +80,15 @@ PER_CRITERION_CEILING_AT_ZERO: dict[str, float] = {
     "bridging":                 0.70,   # ignoring materials → bad but task-dependent
     "scaffolding":              0.70,   # no scaffolding → fixable
     "no_excessive_validation":  0.80,   # sycophancy → annoying but doesn't ruin teaching
+    # ----- Deterministic criteria (added 2026-05-13) -----
+    # Apply gating only to mechanical signals where scoring 0 is a real
+    # categorical failure — heavy firehose, broken code, structural dump.
+    # Other det criteria stay uncapped (weak / context-dependent signals).
+    "anti_firehose_length":     0.50,   # mean teacher words/turn off the deep end
+    "first_message_length":     0.55,   # giant turn-1 wall is hard to recover from
+    "listicle_density":         0.60,   # response-as-listicle in chat
+    "code_validity":            0.30,   # broken Python in a code task — bad
+    "turn_asymmetry":           0.70,   # teacher writes 50× student → not a dialogue
 }
 
 

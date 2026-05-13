@@ -87,6 +87,7 @@ def load_environment(
         tools=TOOLS,
         env_id="teachingbench",
         tutor_system_prompt_override=tutor_system_prompt,
+        tutor_system_prompt_override_name=tutor_system_prompt_name,
         **kwargs,
     )
 
@@ -102,6 +103,7 @@ class TeachingEnv(vf.MultiTurnEnv):
         default_turns: int = 4,
         tools: list[Any] | None = None,
         tutor_system_prompt_override: str | None = None,
+        tutor_system_prompt_override_name: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._tools = list(tools or [])
@@ -120,7 +122,10 @@ class TeachingEnv(vf.MultiTurnEnv):
         # Env-level override for the per-task tutor system prompt. When
         # set (non-empty), takes precedence over the task's own
         # `tutor_system_prompt` for every rollout in this env instance.
+        # `_name` is the registry key (e.g. "optimized") for display;
+        # may be None even when an override string is set (raw override).
         self._tutor_system_prompt_override = tutor_system_prompt_override
+        self._tutor_system_prompt_override_name = tutor_system_prompt_override_name
 
     # ------------------------------------------------------------------ setup
 
@@ -134,11 +139,21 @@ class TeachingEnv(vf.MultiTurnEnv):
         # Env-level override wins over per-task setting when non-empty.
         # If both are None/empty, the prompt is empty (no teacher conditioning) —
         # matches DEFAULT_TUTOR_SYSTEM_PROMPT = "".
-        tutor_system_prompt = (
-            self._tutor_system_prompt_override
-            if self._tutor_system_prompt_override
-            else info.get("tutor_system_prompt", "")
-        )
+        if self._tutor_system_prompt_override:
+            tutor_system_prompt = self._tutor_system_prompt_override
+            tutor_system_prompt_name = (
+                self._tutor_system_prompt_override_name or "custom"
+            )
+        else:
+            tutor_system_prompt = info.get("tutor_system_prompt", "")
+            tutor_system_prompt_name = (
+                info.get("tutor_system_prompt_name") or ("custom" if tutor_system_prompt else "default")
+            )
+        # Persist the effective prompt + its name into info so the row in
+        # results.jsonl reflects what was actually used (not just the task
+        # default). Frontend / dashboard reads from here.
+        info["tutor_system_prompt"] = tutor_system_prompt
+        info["tutor_system_prompt_name"] = tutor_system_prompt_name
         student_system_prompt = info.get("student_system_prompt", "")
         fixed_followups = list(info.get("fixed_student_followups") or [])
 

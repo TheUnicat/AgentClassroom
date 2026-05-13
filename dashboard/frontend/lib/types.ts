@@ -75,6 +75,12 @@ export interface RunDetail {
   reward: number | null;
   judge_breakdown: JudgeBreakdown | null;
   trajectory: TrajectoryTurn[] | null;
+  // Teacher system prompt — surfaced for the right-side prompt pill.
+  // `name` is the registry key ("default" / "socratic" / "concise" /
+  // "materials_first" / "optimized" / "custom"). `tutor_system_prompt`
+  // is the raw text (empty when name is "default").
+  tutor_system_prompt: string;
+  tutor_system_prompt_name: string;
   metrics: Record<string, number> | null;
   stop_condition: string | null;
   is_completed: boolean | null;

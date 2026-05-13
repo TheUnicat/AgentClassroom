@@ -162,6 +162,11 @@ def get_run(run_id: str) -> dict[str, Any]:
         "reward": rec.get("reward"),
         "judge_breakdown": rec.get("judge_breakdown"),
         "trajectory": trajectory,
+        # Teacher system prompt — surface BOTH the registry name (for the
+        # title pill) and the raw text (for the expandable markdown view).
+        # Empty / "default" both render as the unexpandable "Default" chip.
+        "tutor_system_prompt": info.get("tutor_system_prompt", "") or "",
+        "tutor_system_prompt_name": info.get("tutor_system_prompt_name") or "default",
         "metrics": rec.get("metrics"),
         "stop_condition": rec.get("stop_condition"),
         "is_completed": rec.get("is_completed"),

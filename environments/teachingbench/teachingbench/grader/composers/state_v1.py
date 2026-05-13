@@ -129,19 +129,23 @@ def _teacher_msg_indices(messages: list[dict]) -> list[int]:
     return [i for i, m in enumerate(messages) if _role(m) == "assistant"]
 
 
+V0_BASELINE = 0.5  # neutral mid-scale baseline for the first turn's delta
+
+
 def _delta_first_defined(prev: float | None, curr: float | None) -> float | None:
-    """Delta with the V(s_-1) := 0 convention.
+    """Per-criterion delta with the V(s_-1) := V0_BASELINE convention.
 
     - Both None → None (criterion stays undefined here)
-    - curr None  → None (we have no current state value to report)
-    - prev None, curr defined → curr (first-defined-turn reward; treats
-      prior state as 0 so r adds up to V_final over the trajectory)
+    - curr None  → None
+    - prev None, curr defined → curr - V0_BASELINE (signed first-defined reward;
+      treats prior state as the mid-scale baseline so per-criterion deltas
+      at T1 are good/bad signed, not always-positive)
     - both defined → curr - prev
     """
     if curr is None:
         return None
     if prev is None:
-        return curr
+        return curr - V0_BASELINE
     return curr - prev
 
 
@@ -159,11 +163,15 @@ def _annotate_state_and_turn_scores(trajectory: list[dict]) -> None:
       - class B (sequence-level):  V(s_t) at this turn
 
     Turn score at turn t = state_value(t) - state_value(t-1), with the
-    convention state_value(-1) := 0 so turn_score(0) = state_value(0).
+    first-turn baseline V(s_-1) := V0_BASELINE (default 0.5 — neutral
+    mid-scale, not 0). The 0-baseline convention made every first turn
+    register as +0.5 just for "the conversation existed"; a neutral
+    baseline makes turn_score(0) signed and informative (positive if
+    the opener was above-average, negative if below).
 
     Per-criterion turn deltas ("turn_breakdown" at turn t):
       - both defined → curr - prev
-      - prev None, curr defined → curr (first defined turn)
+      - prev None, curr defined → curr - 0.5 (first-defined-turn signed delta)
       - curr None → None
     """
     det_crits = list(_PER_TURN_DET) + list(_SEQ_DET)
@@ -199,7 +207,7 @@ def _annotate_state_and_turn_scores(trajectory: list[dict]) -> None:
             prev = prev_state_breakdown[cid]
             turn_breakdown[cid] = _delta_first_defined(prev, curr)
 
-        prev_sv = prev_state_value if prev_state_value is not None else 0.0
+        prev_sv = prev_state_value if prev_state_value is not None else V0_BASELINE
         turn_score = state_value - prev_sv
 
         entry["state_value"] = state_value

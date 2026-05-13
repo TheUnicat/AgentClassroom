@@ -62,20 +62,21 @@ SEED_RUNS="$SPACE_DIR/dashboard/backend/seed_runs"
 rm -rf "$SEED_RUNS"
 mkdir -p "$SEED_RUNS"
 
-# Flatten the 4 batched dirs that make up the 228-rollout v0.1 baseline. We do NOT
-# include the loose standalones at SRC_RUNS root — those are exploration/dev runs,
-# not part of the published baseline.
+# Flatten the 4 batched dirs that make up the 228-rollout v0.1 baseline +
+# the 60-rollout teacher-prompt experiment (5 tasks × 3 models × 4 prompts).
+# Loose standalones at SRC_RUNS root are NOT included — those are dev runs.
 for batch in \
     batched_gpt54_round1_v2 \
     batched_opus_round1_text \
     batched_opus_round1_materials \
-    batch_realtime_round1; do
+    batch_realtime_round1 \
+    experiment_optimized_round1; do
   for sub in "$SRC_RUNS/$batch"/*/; do
     [[ -f "$sub/results.jsonl" ]] || continue
     name=$(basename "$sub")
-    # Source dirs are named <model>__<subject>__<task>; rewrite to
-    # <batch>__<subject>__<task>__<model> so the dashboard's _model_from_run_id
-    # (rsplit on "__") picks the teacher model.
+    # Source dirs are named <model>__<subject>__<task>[__prompt-<name>];
+    # rewrite to <batch>__<subject>__<task>[__prompt-<name>]__<model> so the
+    # dashboard's _model_from_run_id (rsplit on "__") picks the teacher model.
     model="${name%%__*}"
     rest="${name#*__}"
     new="${batch}__${rest}__${model}"

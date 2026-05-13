@@ -123,6 +123,8 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [breakdown, setBreakdown] = useState<JudgeBreakdown | null>(null);
   const [trajectory, setTrajectory] = useState<TrajectoryTurn[] | null>(null);
+  const [tutorPromptName, setTutorPromptName] = useState<string>("default");
+  const [tutorPromptText, setTutorPromptText] = useState<string>("");
   const [activeRubric, setActiveRubric] = useState<RubricCriterion[] | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
   const [status, setStatus] = useState<string>("");
@@ -215,6 +217,8 @@ export default function Page() {
       setMessages([]);
       setBreakdown(null);
       setTrajectory(null);
+      setTutorPromptName("default");
+      setTutorPromptText("");
       setSelectedRunId(null);
       setActiveTeacher(null);
       setActiveJudge(null);
@@ -278,11 +282,15 @@ export default function Page() {
     setMessages([]);
     setBreakdown(null);
     setTrajectory(null);
+    setTutorPromptName("default");
+    setTutorPromptText("");
     try {
       const detail = await api.getRun(runId);
       setMessages(detail.messages);
       setBreakdown(detail.judge_breakdown);
       setTrajectory(detail.trajectory ?? null);
+      setTutorPromptName(detail.tutor_system_prompt_name ?? "default");
+      setTutorPromptText(detail.tutor_system_prompt ?? "");
       setActiveRubric(detail.rubric ?? selectedTask?.rubric ?? null);
       if (detail.task_id) setSelectedTaskId(detail.task_id);
       // teacher model is encoded in the run id's last __ segment.
@@ -304,6 +312,8 @@ export default function Page() {
     setMessages([]);
     setBreakdown(null);
     setTrajectory(null);
+    setTutorPromptName("default");
+    setTutorPromptText("");
     setActiveRubric(selectedTask?.rubric ?? null);
     setActiveTeacher(pickedTeacher);
     setActiveJudge(DEFAULT_JUDGE_DISPLAY);
@@ -487,6 +497,7 @@ export default function Page() {
               </div>
             )}
             <div className="flex-1 overflow-y-auto px-6 py-4">
+              <TeacherPromptPanel name={tutorPromptName} text={tutorPromptText} />
               <ChatView messages={messages} mode={mode} status={status} trajectory={trajectory} />
             </div>
             <div className="border-t border-[var(--color-border)] px-6 py-3 max-h-[40vh] overflow-y-auto">
@@ -918,6 +929,59 @@ function MessageBubble({ message, turn }: { message: Message; turn?: TrajectoryT
       </div>
       {role === "assistant" && turn && <TurnScorePanel turn={turn} />}
       <Markdown content={message.content} />
+    </div>
+  );
+}
+
+// ---- Teacher system-prompt pill + expandable markdown ------------------
+// Renders at the top of the Demo right pane. Shows a conspicuous title
+// chip with the prompt's registry name ("Optimized", "Socratic",
+// "Default", etc.). Click to expand the full prompt as markdown.
+// "Default" is unexpandable (no custom text to show).
+
+const PROMPT_DISPLAY_NAMES: Record<string, string> = {
+  default: "Default",
+  custom: "Custom",
+  socratic: "Socratic",
+  concise: "Concise",
+  materials_first: "Materials-first",
+  optimized: "Optimized",
+};
+
+function prettyPromptName(name: string): string {
+  return PROMPT_DISPLAY_NAMES[name] ?? name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function TeacherPromptPanel({ name, text }: { name: string; text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isDefault = name === "default" || !text;
+  const display = prettyPromptName(name);
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-[var(--color-text-dim)]">Teacher prompt:</span>
+        {isDefault ? (
+          <span className="inline-flex items-center rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-0.5 text-[var(--color-text-dim)]">
+            {display}
+          </span>
+        ) : (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-panel)] px-2 py-0.5 text-[var(--color-accent)] hover:bg-[var(--color-panel-hover)]"
+          >
+            <span className="font-medium">{display}</span>
+            <span className="text-[10px]">{expanded ? "▲ hide" : "▼ show full"}</span>
+          </button>
+        )}
+      </div>
+      {expanded && !isDefault && (
+        <div className="mt-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] p-3">
+          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
+            Full system prompt
+          </div>
+          <Markdown content={text} />
+        </div>
+      )}
     </div>
   );
 }
