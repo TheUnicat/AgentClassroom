@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, streamRun } from "@/lib/api";
@@ -10,6 +10,7 @@ import type {
   RubricCriterion,
   RunSummary,
   Task,
+  TrajectoryTurn,
 } from "@/lib/types";
 
 // READ THIS BEFORE EDITING THIS FILE:  ./AGENTS.md
@@ -121,6 +122,7 @@ export default function Page() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [breakdown, setBreakdown] = useState<JudgeBreakdown | null>(null);
+  const [trajectory, setTrajectory] = useState<TrajectoryTurn[] | null>(null);
   const [activeRubric, setActiveRubric] = useState<RubricCriterion[] | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
   const [status, setStatus] = useState<string>("");
@@ -212,6 +214,7 @@ export default function Page() {
       // No saved rollout for this task — clear stale right-pane content.
       setMessages([]);
       setBreakdown(null);
+      setTrajectory(null);
       setSelectedRunId(null);
       setActiveTeacher(null);
       setActiveJudge(null);
@@ -274,10 +277,12 @@ export default function Page() {
     setSelectedRunId(runId);
     setMessages([]);
     setBreakdown(null);
+    setTrajectory(null);
     try {
       const detail = await api.getRun(runId);
       setMessages(detail.messages);
       setBreakdown(detail.judge_breakdown);
+      setTrajectory(detail.trajectory ?? null);
       setActiveRubric(detail.rubric ?? selectedTask?.rubric ?? null);
       if (detail.task_id) setSelectedTaskId(detail.task_id);
       // teacher model is encoded in the run id's last __ segment.
@@ -298,6 +303,7 @@ export default function Page() {
     setSelectedRunId(null);
     setMessages([]);
     setBreakdown(null);
+    setTrajectory(null);
     setActiveRubric(selectedTask?.rubric ?? null);
     setActiveTeacher(pickedTeacher);
     setActiveJudge(DEFAULT_JUDGE_DISPLAY);
@@ -481,7 +487,7 @@ export default function Page() {
               </div>
             )}
             <div className="flex-1 overflow-y-auto px-6 py-4">
-              <ChatView messages={messages} mode={mode} status={status} />
+              <ChatView messages={messages} mode={mode} status={status} trajectory={trajectory} />
             </div>
             <div className="border-t border-[var(--color-border)] px-6 py-3 max-h-[40vh] overflow-y-auto">
               <ScorePanel
@@ -853,10 +859,12 @@ function ChatView({
   messages,
   mode,
   status,
+  trajectory,
 }: {
   messages: Message[];
   mode: Mode;
   status: string;
+  trajectory: TrajectoryTurn[] | null;
 }) {
   if (!messages.length) {
     return (
@@ -871,10 +879,13 @@ function ChatView({
       </div>
     );
   }
+  // Map message index → trajectory entry for that assistant turn, if any.
+  const trajByMsgIdx = new Map<number, TrajectoryTurn>();
+  (trajectory ?? []).forEach((t) => trajByMsgIdx.set(t.msg_idx, t));
   return (
     <div className="space-y-3">
       {messages.map((m, i) => (
-        <MessageBubble key={i} message={m} />
+        <MessageBubble key={i} message={m} turn={trajByMsgIdx.get(i)} />
       ))}
       {mode === "running" && (
         <div className="text-xs text-[var(--color-text-dim)] animate-pulse">
@@ -885,7 +896,7 @@ function ChatView({
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, turn }: { message: Message; turn?: TrajectoryTurn }) {
   const role = message.role;
   const labelMap: Record<string, string> = {
     user: "Student",
@@ -906,7 +917,120 @@ function MessageBubble({ message }: { message: Message }) {
         {label}
       </div>
       <Markdown content={message.content} />
+      {role === "assistant" && turn && <TurnScorePanel turn={turn} />}
     </div>
+  );
+}
+
+// ---- Per-message state value + turn score widget ------------------------
+// Renders under each AI message in the Demo view. Shows the conversation's
+// state value at this turn, plus the turn score (delta from the previous
+// turn). Both have hover breakdowns + (i) info tooltips.
+
+function TurnScorePanel({ turn }: { turn: TrajectoryTurn }) {
+  return (
+    <div className="mt-2 flex items-center gap-3 text-xs">
+      <ScoreChip
+        label="State value"
+        value={turn.state_value}
+        signed={false}
+        info="Score for the conversation up to this point. Higher is better."
+        breakdown={turn.state_breakdown}
+        breakdownTitle="State breakdown at this turn"
+      />
+      <ScoreChip
+        label="Turn score"
+        value={turn.turn_score}
+        signed={true}
+        info="How good this turn was: state value at this turn minus the previous turn's. Higher is better."
+        breakdown={turn.turn_breakdown}
+        breakdownTitle="Turn delta by criterion"
+      />
+    </div>
+  );
+}
+
+function ScoreChip({
+  label,
+  value,
+  signed,
+  info,
+  breakdown,
+  breakdownTitle,
+}: {
+  label: string;
+  value: number;
+  signed: boolean;
+  info: string;
+  breakdown: Record<string, number | null>;
+  breakdownTitle: string;
+}) {
+  const sign = signed && value > 0 ? "+" : "";
+  // Color: state value cool→warm; turn score signed red/green.
+  let valueColor = "var(--color-text)";
+  if (signed) {
+    valueColor = value > 0.001 ? "var(--color-good)" : value < -0.001 ? "var(--color-bad)" : "var(--color-text-dim)";
+  }
+  return (
+    <div className="group relative inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 bg-[var(--color-panel-hover)]">
+      <span className="text-[var(--color-text-dim)]">{label}:</span>
+      <span style={{ color: valueColor }} className="font-medium tabular-nums">
+        {sign}{value.toFixed(3)}
+      </span>
+      <InfoCircle text={info} />
+      {/* Hover breakdown panel */}
+      <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[260px] max-w-[360px] rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] p-2 shadow-lg group-hover:block">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)] mb-1">{breakdownTitle}</div>
+        <BreakdownTable breakdown={breakdown} signed={signed} />
+      </div>
+    </div>
+  );
+}
+
+function BreakdownTable({
+  breakdown,
+  signed,
+}: {
+  breakdown: Record<string, number | null>;
+  signed: boolean;
+}) {
+  const entries = Object.entries(breakdown);
+  return (
+    <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
+      {entries.map(([crit, val]) => {
+        let display: string;
+        let color = "var(--color-text)";
+        if (val === null || val === undefined) {
+          display = "—";
+          color = "var(--color-text-dim)";
+        } else if (signed) {
+          const sgn = val > 0 ? "+" : "";
+          display = `${sgn}${val.toFixed(3)}`;
+          color = val > 0.001 ? "var(--color-good)" : val < -0.001 ? "var(--color-bad)" : "var(--color-text-dim)";
+        } else {
+          display = val.toFixed(3);
+        }
+        return (
+          <Fragment key={crit}>
+            <div className="text-[var(--color-text-dim)] truncate">{prettyCriterionId(crit)}</div>
+            <div className="tabular-nums" style={{ color }}>{display}</div>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function InfoCircle({ text }: { text: string }) {
+  return (
+    <span className="group/info relative inline-flex">
+      <span className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-[var(--color-text-dim)] text-[9px] text-[var(--color-text-dim)] hover:border-[var(--color-text)] hover:text-[var(--color-text)]">
+        i
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden -translate-x-1/2 whitespace-normal rounded border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1 text-[11px] leading-tight shadow-md group-hover/info:block" style={{ width: 220 }}>
+        {text}
+      </span>
+    </span>
   );
 }
 

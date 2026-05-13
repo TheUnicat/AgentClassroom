@@ -144,6 +144,15 @@ def get_run(run_id: str) -> dict[str, Any]:
         line = f.readline()
     rec = json.loads(line)
     info = _parse_info(rec.get("info"))
+    # Pull the state_v1 trajectory if the row has been judged with that
+    # composer. The frontend uses it to render per-message state_value +
+    # turn_score widgets on the Demo view.
+    state_breakdown = rec.get("judge_breakdown__state_v1")
+    trajectory = None
+    if isinstance(state_breakdown, dict):
+        terms = state_breakdown.get("composite_terms") or {}
+        if isinstance(terms, dict):
+            trajectory = terms.get("trajectory")
     return {
         "id": run_id,
         "task_id": info.get("task_id"),
@@ -152,6 +161,7 @@ def get_run(run_id: str) -> dict[str, Any]:
         "messages": _normalize_messages((rec.get("prompt") or []) + (rec.get("completion") or [])),
         "reward": rec.get("reward"),
         "judge_breakdown": rec.get("judge_breakdown"),
+        "trajectory": trajectory,
         "metrics": rec.get("metrics"),
         "stop_condition": rec.get("stop_condition"),
         "is_completed": rec.get("is_completed"),

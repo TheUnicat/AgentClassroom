@@ -46,6 +46,26 @@ export interface JudgeBreakdown {
   rubric?: RubricCriterion[];
 }
 
+// One entry per teacher turn from the state_v1 composer.
+// state_value = det-only running composite up to this teacher turn.
+// turn_score  = state_value(t) - state_value(t-1), with t-1 = 0 convention.
+// state_breakdown[crit] = running aggregate for that criterion at this turn.
+// turn_breakdown[crit]  = change since prior turn (first-defined = the value itself).
+export interface TrajectoryTurn {
+  turn: number;
+  msg_idx: number;
+  state_value: number;
+  turn_score: number;
+  state_breakdown: Record<string, number | null>;
+  turn_breakdown: Record<string, number | null>;
+  // class A (per-turn-natural) immediate rewards — already per turn, no
+  // running aggregate. Kept for hover insight.
+  scores?: Record<string, number | null>;
+  // class B (sequence-level cumulative) raw V(s_t) + delta — kept for inspection.
+  state?: Record<string, number | null>;
+  delta?: Record<string, number | null>;
+}
+
 export interface RunDetail {
   id: string;
   task_id: string | null;
@@ -54,6 +74,7 @@ export interface RunDetail {
   messages: Message[];
   reward: number | null;
   judge_breakdown: JudgeBreakdown | null;
+  trajectory: TrajectoryTurn[] | null;
   metrics: Record<string, number> | null;
   stop_condition: string | null;
   is_completed: boolean | null;

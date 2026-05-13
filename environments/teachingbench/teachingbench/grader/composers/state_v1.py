@@ -48,6 +48,7 @@ from typing import Any
 
 from teachingbench.grader.composers.base import default_compose
 from teachingbench.grader.judge_cache import cached_judge, store
+from teachingbench.grader.reward_scoring import compute_composite
 from teachingbench.grader.functions.deterministic import (
     anti_firehose_length,
     code_validity,
@@ -144,6 +145,72 @@ def _delta_first_defined(prev: float | None, curr: float | None) -> float | None
     return curr - prev
 
 
+def _annotate_state_and_turn_scores(trajectory: list[dict]) -> None:
+    """Mutate `trajectory` in place: add `state_value`, `turn_score`,
+    `state_breakdown`, and `turn_breakdown` to each entry.
+
+    State value at turn t = deterministic-only composite computed on the
+    running aggregates of every det criterion up to t. We exclude the LLM
+    criteria here because they're outcome-level (no per-turn value
+    available). Weights are renormalized over det criteria only.
+
+    Per-criterion running aggregates ("state_breakdown" at turn t):
+      - class A (per-turn-natural): running mean of per-turn rewards up to t
+      - class B (sequence-level):  V(s_t) at this turn
+
+    Turn score at turn t = state_value(t) - state_value(t-1), with the
+    convention state_value(-1) := 0 so turn_score(0) = state_value(0).
+
+    Per-criterion turn deltas ("turn_breakdown" at turn t):
+      - both defined → curr - prev
+      - prev None, curr defined → curr (first defined turn)
+      - curr None → None
+    """
+    det_crits = list(_PER_TURN_DET) + list(_SEQ_DET)
+    weight_total = sum(WEIGHTS[c] for c in det_crits)
+    det_weights = {c: WEIGHTS[c] / weight_total for c in det_crits}
+
+    running_sums = {c: 0.0 for c in _PER_TURN_DET}
+    running_n = {c: 0 for c in _PER_TURN_DET}
+    prev_state_breakdown: dict[str, float | None] = {c: None for c in det_crits}
+    prev_state_value: float | None = None
+
+    for entry in trajectory:
+        for cid in _PER_TURN_DET:
+            v = entry["scores"].get(cid)
+            if isinstance(v, (int, float)):
+                running_sums[cid] += v
+                running_n[cid] += 1
+
+        state_breakdown: dict[str, float | None] = {}
+        for cid in _PER_TURN_DET:
+            n = running_n[cid]
+            state_breakdown[cid] = running_sums[cid] / n if n > 0 else None
+        for cid in _SEQ_DET:
+            state_breakdown[cid] = entry["state"].get(cid)
+
+        # det-only composite
+        result = compute_composite(state_breakdown, det_weights)
+        state_value = float(result["composite"])
+
+        turn_breakdown: dict[str, float | None] = {}
+        for cid in det_crits:
+            curr = state_breakdown[cid]
+            prev = prev_state_breakdown[cid]
+            turn_breakdown[cid] = _delta_first_defined(prev, curr)
+
+        prev_sv = prev_state_value if prev_state_value is not None else 0.0
+        turn_score = state_value - prev_sv
+
+        entry["state_value"] = state_value
+        entry["turn_score"] = turn_score
+        entry["state_breakdown"] = state_breakdown
+        entry["turn_breakdown"] = turn_breakdown
+
+        prev_state_breakdown = state_breakdown
+        prev_state_value = state_value
+
+
 async def score(
     messages: list[dict],
     task_info: dict,
@@ -209,6 +276,11 @@ async def score(
             "state":  seq_state,              # class B: V(s_t) for cumulative criteria
             "delta":  seq_delta,              # class B: r_t = V_t - V_{t-1}
         })
+
+    # ----- Per-turn aggregates (state_value + turn_score) ---------------
+    # Det-only running composite at each turn + delta. These are what the
+    # dashboard renders per AI message.
+    _annotate_state_and_turn_scores(trajectory)
 
     # ----- Aggregate -----------------------------------------------------
     aggregated: dict[str, float | None] = {}
