@@ -1,45 +1,53 @@
 """Turn asymmetry: teacher / student word ratio per pair.
 
 Measures: how much more prose the teacher writes than the student does
-in the immediately preceding turn. The first teacher turn is paired
-with the seed question.
+in the immediately preceding turn. The first teacher turn pairs with
+the seed question.
 
-Good: teacher writes ~2-5x student. Enough to actually explain, not so
-much that the student is being lectured at. We peak at 3.5x.
-Bad too low: ratio < ~1 means the teacher is being terser than the
-student — under-explaining, or just rubber-stamping.
-Bad too high: ratio > ~7 means each student sentence triggers a
-multi-paragraph teacher response — info-dumping.
+This benchmark caps student replies at ~50 words by design (see the
+student system prompt), so teacher/student ratios are naturally higher
+than in unconstrained tutoring. The earlier symmetric-tent calibration
+(peak=3.5×, zero at 7×) bottomed out at 0.0 for almost every rollout
+once student replies dropped below 30 words and teachers wrote 200-500.
 
-Code blocks are stripped from teacher text (we want prose volume, not
-fenced examples). Student text is left as-is — students don't typically
-paste code dumps, and if they do we want their question to "count" the
-same.
+New shape: monotonic smooth decay using `sqrt(healthy / ratio)`.
+- ratio ≤ HEALTHY (= 4×) → 1.0 (plateau)
+- ratio > HEALTHY → `sqrt(HEALTHY / ratio)`  (continuous at the kink)
 
-Per-pair ratio is clamped at 20 before averaging so one extreme outlier
-(student says "ok", teacher writes 600 words) can't drag the mean off
-the tent function entirely.
+Concretely:
+    ratio = 4   → 1.000
+    ratio = 6   → 0.816
+    ratio = 8   → 0.707
+    ratio = 12  → 0.577
+    ratio = 16  → 0.500
+    ratio = 25  → 0.400
+    ratio = 64  → 0.250
 
-Mapping: `tent(mean_ratio, peak=3.5, half_width=3.5)` — value of 1.0 at
-3.5x, linear drop to 0.0 at 0x and at 7x.
+This rewards healthy-or-below ratios fully and decays gracefully at
+extremes — no cliff, no zero-floor surprises.
 
-Returns None when there are no teacher/student pairs (no teacher turns,
-or no seed question and no other student turns).
+We score-per-pair and average the per-pair scores, rather than
+averaging the ratios and scoring the mean. That way a single
+wall-of-text turn doesn't drag an otherwise-balanced session to 0:
+three healthy turns + one 50× turn averages to ~0.81 (good with
+caveat), not 0.28 (broken). Code blocks are stripped from teacher
+text — we measure prose volume, not example code volume.
+
+Returns None when there are no teacher/student pairs.
 """
 
 from __future__ import annotations
 
+import math
+
 from teachingbench.grader.functions.deterministic._utils import (
     seed_question,
     strip_code_blocks,
-    tent,
     word_count,
 )
 
 
-PEAK = 3.5
-HALF_WIDTH = 3.5
-MAX_RATIO = 20.0
+HEALTHY_RATIO = 4.0
 
 
 def _role(m: object) -> str:
@@ -64,12 +72,16 @@ def _content(m: object) -> str:
     return str(c or "")
 
 
+def _per_pair(ratio: float) -> float:
+    if ratio <= HEALTHY_RATIO:
+        return 1.0
+    return math.sqrt(HEALTHY_RATIO / ratio)
+
+
 def score(messages: list[dict], task_info: dict) -> float | None:
-    # Pair each assistant turn with the most recent prior student turn,
-    # falling back to the seed question for the opener.
     seed = seed_question(messages)
     last_student: str = seed
-    pairs: list[tuple[str, str]] = []  # (student_text, teacher_text)
+    pairs: list[tuple[str, str]] = []
     for m in messages:
         r = _role(m)
         if r == "user":
@@ -86,34 +98,40 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     if not pairs:
         return None
 
-    ratios: list[float] = []
+    per_turn_scores: list[float] = []
     for s_text, t_text in pairs:
         t_words = word_count(strip_code_blocks(t_text))
         s_words = max(word_count(s_text), 1)
-        ratios.append(min(t_words / s_words, MAX_RATIO))
+        per_turn_scores.append(_per_pair(t_words / s_words))
 
-    mean_ratio = sum(ratios) / len(ratios)
-    return tent(mean_ratio, peak=PEAK, half_width=HALF_WIDTH)
+    return sum(per_turn_scores) / len(per_turn_scores)
 
 
 if __name__ == "__main__":
-    # Case 1: healthy ratio — teacher writes ~3-4x student.
+    # Healthy ratios across all turns
     balanced = [
-        {"role": "user", "content": "What is a pointer in C and how is it different from an integer variable?"},  # 14
-        {"role": "assistant", "content": "A pointer holds a memory address rather than a plain value. The type tells the compiler how to interpret what lives at that address, and how many bytes to step when you do pointer arithmetic on it."},  # ~42
-        {"role": "user", "content": "And what about references in C++?"},  # 6
-        {"role": "assistant", "content": "A reference is an alias for an existing variable. Once bound, it cannot be made to refer to something else, and it cannot be null."},  # ~24
+        {"role": "user", "content": "What is a pointer in C and how is it different from an integer variable?"},
+        {"role": "assistant", "content": "A pointer holds a memory address rather than a plain value. The type tells the compiler how to interpret what lives at that address, and how many bytes to step when you do pointer arithmetic on it."},
+        {"role": "user", "content": "And what about references in C++?"},
+        {"role": "assistant", "content": "A reference is an alias for an existing variable. Once bound, it cannot be made to refer to something else, and it cannot be null."},
     ]
-    # Case 2: firehose — teacher massively over-writes.
+    # Pervasive firehose
     firehose = [
-        {"role": "user", "content": "Pointers?"},  # 1
-        {"role": "assistant", "content": "A pointer is a variable. " * 60},  # ~240
+        {"role": "user", "content": "Pointers?"},
+        {"role": "assistant", "content": "A pointer is a variable. " * 60},
     ]
-    # Case 3: terse — teacher under-writes.
-    terse = [
-        {"role": "user", "content": "Tell me everything about how pointers work in C and why they're useful for systems programming."},  # 17
-        {"role": "assistant", "content": "Memory addresses."},  # 2
+    # Three healthy turns + one outlier wall-of-text — score-then-average
+    # should keep this comfortably above 0.5
+    mostly_ok = [
+        {"role": "user", "content": "Explain a pointer."},
+        {"role": "assistant", "content": "A pointer stores a memory address. " * 4},
+        {"role": "user", "content": "And dereferencing?"},
+        {"role": "assistant", "content": "Dereferencing reads the value at that address. " * 4},
+        {"role": "user", "content": "Got it"},
+        {"role": "assistant", "content": "Memory diagrams help here. " * 4},
+        {"role": "user", "content": "ok"},
+        {"role": "assistant", "content": "Now let me dump everything: " + ("pointer arithmetic and alignment and the stack and heap layouts. " * 40)},
     ]
-    print("balanced ->", score(balanced, {}))
-    print("firehose ->", score(firehose, {}))
-    print("terse    ->", score(terse, {}))
+    print("balanced  ->", round(score(balanced, {}), 3))
+    print("firehose  ->", round(score(firehose, {}), 3))
+    print("mostly_ok ->", round(score(mostly_ok, {}), 3))
