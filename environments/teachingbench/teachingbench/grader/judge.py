@@ -15,13 +15,63 @@ Per-criterion scores + rationale land in `state["judge_breakdown"]` for inspecti
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import random
 from typing import Any
 
 import verifiers as vf
 from openai import AsyncOpenAI
+
+# Retry settings for transient API errors (429 rate-limit, 5xx server errors,
+# timeouts, transient network glitches). Does NOT retry on 4xx auth/billing
+# errors — those are persistent and re-issuing the same call won't help.
+_MAX_RETRIES = 3
+_BACKOFF_BASE_S = 1.5  # 1.5s, 3s, 6s with jitter
+
+
+def _should_retry(exc: BaseException) -> bool:
+    """Decide whether an exception is worth retrying. Transient errors only —
+    429s, 5xxs, timeouts, connection resets. Persistent errors (401 auth,
+    402 billing, 400 bad request) are NOT retried."""
+    # OpenAI/Anthropic SDKs expose `status_code` on their HTTP error subclasses.
+    code = getattr(exc, "status_code", None)
+    if code is not None:
+        if code == 429:  # rate limit
+            return True
+        if 500 <= code < 600:  # server errors
+            return True
+        return False  # 401, 402, 403, 404, 400 — don't retry
+    # Heuristic: timeouts, connection issues
+    name = type(exc).__name__.lower()
+    if any(t in name for t in ("timeout", "connection", "apiconnect")):
+        return True
+    return False
+
+
+async def _with_retry(label: str, coro_factory):
+    """Call `coro_factory()` (a no-arg callable returning a fresh coroutine)
+    up to _MAX_RETRIES times, with jittered exponential backoff between
+    attempts. Returns the awaited result or re-raises the final exception.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await coro_factory()
+        except BaseException as e:  # noqa: BLE001
+            last_exc = e
+            if attempt == _MAX_RETRIES - 1 or not _should_retry(e):
+                raise
+            delay = _BACKOFF_BASE_S * (2 ** attempt) * (0.5 + random.random())
+            logger.warning(
+                "%s attempt %d/%d failed (%s); retrying in %.1fs",
+                label, attempt + 1, _MAX_RETRIES, type(e).__name__, delay,
+            )
+            await asyncio.sleep(delay)
+    if last_exc is not None:
+        raise last_exc  # unreachable but pleases type-checker
 
 from teachingbench.grader.reward_scoring import compute_composite, describe as describe_formula
 from teachingbench.prompts import DEFAULT_RUBRIC, TRANSCRIPT_JUDGE_PROMPT
@@ -132,17 +182,19 @@ async def _judge_openai_call(
         args["max_completion_tokens"] = args.pop("max_tokens")
     args = {k: v for k, v in args.items() if v is not None}
 
-    try:
-        resp = await judge_client.chat.completions.create(
+    async def _call():
+        return await judge_client.chat.completions.create(
             model=judge_model,
             messages=[{"role": "user", "content": judge_prompt}],
             response_format={"type": "json_schema",
                              "json_schema": {"name": "teaching_rubric_score", "strict": True, "schema": schema}},
             **args,
         )
+    try:
+        resp = await _with_retry("OpenAI judge", _call)
         raw = resp.choices[0].message.content or ""
     except Exception as e:
-        logger.warning("OpenAI judge call failed: %s", e)
+        logger.warning("OpenAI judge call failed (after retries): %s", e)
         return {"error": f"judge_error: {e}"}
 
     try:
@@ -194,8 +246,8 @@ async def _judge_anthropic_call(
     args.setdefault("max_tokens", 4096)
     args = {k: v for k, v in args.items() if v is not None}
 
-    try:
-        resp = await judge_client.messages.create(
+    async def _call():
+        return await judge_client.messages.create(
             model=judge_model,
             system=[{"type": "text", "text": system_text,
                      "cache_control": {"type": "ephemeral"}}],
@@ -204,6 +256,8 @@ async def _judge_anthropic_call(
             tool_choice={"type": "tool", "name": "report_rubric_scores"},
             **args,
         )
+    try:
+        resp = await _with_retry("Anthropic judge", _call)
         # Log cache stats once per call so we can verify caching is working.
         usage = getattr(resp, "usage", None)
         if usage is not None:
@@ -212,7 +266,7 @@ async def _judge_anthropic_call(
             it = getattr(usage, "input_tokens", 0)
             logger.info("Opus cache: writes=%s reads=%s non-cached_input=%s", cw, cr, it)
     except Exception as e:
-        logger.warning("Anthropic judge call failed: %s", e)
+        logger.warning("Anthropic judge call failed (after retries): %s", e)
         return {"error": f"judge_error: {e}"}
 
     # Find the tool_use block in the response

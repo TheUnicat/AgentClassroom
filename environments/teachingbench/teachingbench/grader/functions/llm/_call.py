@@ -27,12 +27,45 @@ Anthropic gotchas handled here:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
 from typing import Any
 
 from teachingbench.client_utils import detect_provider
+
+# Retry settings — see grader/judge.py for the same pattern.
+_MAX_RETRIES = 3
+_BACKOFF_BASE_S = 1.5
+
+
+def _should_retry(exc: BaseException) -> bool:
+    code = getattr(exc, "status_code", None)
+    if code is not None:
+        return code == 429 or 500 <= code < 600
+    name = type(exc).__name__.lower()
+    return any(t in name for t in ("timeout", "connection", "apiconnect"))
+
+
+async def _with_retry(label: str, coro_factory):
+    last_exc: BaseException | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await coro_factory()
+        except BaseException as e:  # noqa: BLE001
+            last_exc = e
+            if attempt == _MAX_RETRIES - 1 or not _should_retry(e):
+                raise
+            delay = _BACKOFF_BASE_S * (2 ** attempt) * (0.5 + random.random())
+            logger.warning(
+                "%s attempt %d/%d failed (%s); retrying in %.1fs",
+                label, attempt + 1, _MAX_RETRIES, type(e).__name__, delay,
+            )
+            await asyncio.sleep(delay)
+    if last_exc is not None:
+        raise last_exc
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +228,8 @@ async def _openai_call(
         args["max_completion_tokens"] = args.pop("max_tokens")
     args = {k: v for k, v in args.items() if v is not None}
 
-    try:
-        resp = await judge_client.chat.completions.create(
+    async def _call():
+        return await judge_client.chat.completions.create(
             model=judge_model,
             messages=[{"role": "user", "content": prompt}],
             response_format={
@@ -209,9 +242,11 @@ async def _openai_call(
             },
             **args,
         )
+    try:
+        resp = await _with_retry(f"OpenAI judge[{criterion_id}]", _call)
         raw = resp.choices[0].message.content or ""
     except Exception as e:
-        logger.warning("OpenAI single-criterion call failed (%s): %s", criterion_id, e)
+        logger.warning("OpenAI single-criterion call failed after retries (%s): %s", criterion_id, e)
         return {"error": f"judge_error: {e}"}
 
     try:
@@ -253,8 +288,8 @@ async def _anthropic_call(
     args.setdefault("max_tokens", 1024)
     args = {k: v for k, v in args.items() if v is not None}
 
-    try:
-        resp = await judge_client.messages.create(
+    async def _call():
+        return await judge_client.messages.create(
             model=judge_model,
             system=[
                 {
@@ -268,6 +303,8 @@ async def _anthropic_call(
             tool_choice={"type": "tool", "name": "report_criterion_score"},
             **args,
         )
+    try:
+        resp = await _with_retry(f"Anthropic judge[{criterion_id}]", _call)
         usage = getattr(resp, "usage", None)
         if usage is not None:
             cw = getattr(usage, "cache_creation_input_tokens", 0)
@@ -278,7 +315,7 @@ async def _anthropic_call(
                 criterion_id, cw, cr, it,
             )
     except Exception as e:
-        logger.warning("Anthropic single-criterion call failed (%s): %s", criterion_id, e)
+        logger.warning("Anthropic single-criterion call failed after retries (%s): %s", criterion_id, e)
         return {"error": f"judge_error: {e}"}
 
     for block in resp.content:
