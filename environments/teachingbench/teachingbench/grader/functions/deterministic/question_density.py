@@ -40,6 +40,15 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return tent(mean_q, peak=1.0, half_width=3.0)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Question count in the latest teacher turn's prose, scored via tent."""
+    turns = teacher_turns(messages)
+    if not turns:
+        return None
+    q = strip_code_blocks(turns[-1]).count("?")
+    return tent(q, peak=1.0, half_width=3.0)
+
+
 if __name__ == "__main__":
     lecturing = [
         {"role": "user", "content": "explain recursion"},

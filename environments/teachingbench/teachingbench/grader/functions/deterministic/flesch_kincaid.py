@@ -153,6 +153,29 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return clamp01(1.0 - dist / _OUTSIDE_DECAY_GRADES)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """FK band-fit for only the most recent teacher turn."""
+    turns = teacher_turns(messages)
+    if not turns:
+        return None
+    prose = strip_code_blocks(turns[-1])
+    density = _latex_density(prose)
+    clean = strip_latex(prose)
+    base = _fk_grade(clean)
+    if base is None:
+        if density >= LATEX_FALLBACK_MIN_DENSITY:
+            fk = LATEX_FALLBACK_FK
+        else:
+            return None
+    else:
+        fk = base + LATEX_FK_BUMP * density
+    lo, hi = _band_for(task_info)
+    if lo <= fk <= hi:
+        return 1.0
+    dist = lo - fk if fk < lo else fk - hi
+    return clamp01(1.0 - dist / _OUTSIDE_DECAY_GRADES)
+
+
 if __name__ == "__main__":
     # mid-grade prose, FK roughly in the 8-11 range
     mid = [

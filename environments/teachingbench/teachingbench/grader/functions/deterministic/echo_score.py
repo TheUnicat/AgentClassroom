@@ -115,6 +115,41 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return (raw_echo - ZERO_AT) / (GOOD_AT - ZERO_AT)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Echo for the latest teacher turn vs the immediately prior student turn."""
+    last_user: str | None = None
+    last_pair: tuple[str, str] | None = None
+    for m in messages:
+        r = _role(m)
+        if r == "user":
+            text = _content(m).strip()
+            if not text or (text.startswith("[Session ended:") and text.endswith("]")):
+                continue
+            last_user = text
+        elif r == "assistant":
+            text = _content(m)
+            if not text:
+                continue
+            if last_user is not None:
+                last_pair = (last_user, text)
+            else:
+                last_pair = None
+    if last_pair is None:
+        return None
+    student_text, teacher_text = last_pair
+    sb = _content_bigrams(student_text)
+    if not sb:
+        raw = 0.0
+    else:
+        tb = _content_bigrams(teacher_text)
+        raw = clamp01(len(sb & tb) / max(1, len(sb)))
+    if raw >= GOOD_AT:
+        return 1.0
+    if raw <= ZERO_AT:
+        return 0.0
+    return (raw - ZERO_AT) / (GOOD_AT - ZERO_AT)
+
+
 if __name__ == "__main__":
     # Case 1: heavy echo — teacher repeats student bigrams verbatim.
     echo_heavy = [

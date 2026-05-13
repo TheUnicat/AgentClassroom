@@ -88,6 +88,34 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return parsed / attempted
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Fraction of parseable Python blocks in the most recent teacher turn."""
+    if (task_info or {}).get("subject") != "cs":
+        return None
+    turns = teacher_turns(messages)
+    if not turns:
+        return None
+    blocks = code_blocks(turns[-1])
+    if not blocks:
+        return None
+    attempted = 0
+    parsed = 0
+    for lang, body in blocks:
+        if not _is_python(lang) or _looks_like_repl(body):
+            continue
+        attempted += 1
+        try:
+            compile(body, "<judge>", "exec")
+            parsed += 1
+        except SyntaxError:
+            pass
+        except Exception:
+            pass
+    if attempted == 0:
+        return None
+    return parsed / attempted
+
+
 if __name__ == "__main__":
     good = [
         {"role": "user", "content": "show me a loop"},

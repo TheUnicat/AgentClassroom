@@ -107,6 +107,31 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return sum(per_turn_scores) / len(per_turn_scores)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Teacher/student word ratio for the latest teacher+student pair."""
+    seed = seed_question(messages)
+    last_student: str = seed
+    last_pair: tuple[str, str] | None = None
+    for m in messages:
+        r = _role(m)
+        if r == "user":
+            text = _content(m).strip()
+            if not text or (text.startswith("[Session ended:") and text.endswith("]")):
+                continue
+            last_student = text
+        elif r == "assistant":
+            text = _content(m)
+            if not text:
+                continue
+            last_pair = (last_student, text)
+    if last_pair is None:
+        return None
+    s_text, t_text = last_pair
+    t_words = word_count(strip_code_blocks(t_text))
+    s_words = max(word_count(s_text), 1)
+    return _per_pair(t_words / s_words)
+
+
 if __name__ == "__main__":
     # Healthy ratios across all turns
     balanced = [

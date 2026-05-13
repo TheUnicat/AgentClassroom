@@ -97,6 +97,19 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return linear_decay(density, good_at=GOOD_AT, zero_at=ZERO_AT)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Markers-per-word density for only the most recent teacher turn."""
+    turns = teacher_turns(messages)
+    if not turns:
+        return None
+    prose = strip_code_blocks(turns[-1])
+    n_words = word_count(strip_latex(prose))
+    if n_words == 0:
+        return None
+    density = _markers(prose) / n_words
+    return linear_decay(density, good_at=GOOD_AT, zero_at=ZERO_AT)
+
+
 if __name__ == "__main__":
     prose_only = [
         {"role": "user", "content": "Explain pointers."},

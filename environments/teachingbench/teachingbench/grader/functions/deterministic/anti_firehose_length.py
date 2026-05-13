@@ -45,6 +45,15 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return linear_decay(mean, good_at=GOOD_AT, zero_at=ZERO_AT)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Score the word count of the most recent teacher turn (prose only)."""
+    turns = teacher_turns(messages)
+    if not turns:
+        return None
+    last_words = word_count(strip_code_blocks(turns[-1]))
+    return linear_decay(last_words, good_at=GOOD_AT, zero_at=ZERO_AT)
+
+
 if __name__ == "__main__":
     short = [
         {"role": "user", "content": "Explain pointers."},

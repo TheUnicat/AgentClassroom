@@ -46,6 +46,15 @@ def score(messages: list[dict], task_info: dict) -> float | None:
     return linear_decay(first_words, good_at=GOOD_AT, zero_at=ZERO_AT)
 
 
+def score_turn(messages: list[dict], task_info: dict) -> float | None:
+    """Fire only when the latest teacher turn IS the first; None otherwise."""
+    turns = teacher_turns(messages)
+    if len(turns) != 1:
+        return None
+    first_words = word_count(strip_code_blocks(turns[0]))
+    return linear_decay(first_words, good_at=GOOD_AT, zero_at=ZERO_AT)
+
+
 if __name__ == "__main__":
     concise = [
         {"role": "user", "content": "What's a pointer?"},
